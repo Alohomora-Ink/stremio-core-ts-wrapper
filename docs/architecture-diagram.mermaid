@@ -1,0 +1,84 @@
+graph TB
+    subgraph "React UI Layer"
+        A[Board Page Component]
+        B[Library Page Component]
+        C[Detail Page Component]
+        D[Player Component]
+    end
+
+    subgraph "Custom Hooks Layer"
+        E[useCtxState]
+        F[useLibrary]
+        G[useAuth]
+        H[useLibraryActions]
+        I[useAddonActions]
+    end
+
+    subgraph "TanStack Query"
+        J[Query Cache]
+        K[Query Client]
+    end
+
+    subgraph "Stremio Core Wrapper"
+        L[ActionBuilder]
+        M[StateParser]
+        N[AddonClient]
+    end
+
+    subgraph "Stremio Core WASM"
+        O[Core Instance]
+        P[dispatch method]
+        Q[get_state method]
+    end
+
+    subgraph "External APIs"
+        R[Cinemeta Addon]
+        S[Other Addons]
+        T[Stremio API]
+    end
+
+    A --> E
+    A --> F
+    B --> F
+    B --> H
+    C --> N
+    D --> H
+
+    E --> J
+    F --> J
+    G --> J
+
+    H --> L
+    H --> K
+    I --> L
+    I --> K
+
+    L --> P
+    M --> Q
+    E --> M
+    F --> M
+
+    P --> O
+    Q --> O
+
+    N --> R
+    N --> S
+
+    K -.Invalidate.-> J
+
+    style O fill:#ff6b6b
+    style L fill:#4ecdc4,color:#000000
+    style M fill:#4ecdc4,color:#000000
+    style N fill:#45b7d1,color:#000000
+    style J fill:#96ceb4,color:#000000
+    style K fill:#96ceb4,color:#000000
+// [MermaidChart: 12399278-c919-480d-810c-7701d238c6ab]
+// [MermaidChart: f143b6d7-c37b-4f11-8c54-9c76945cd048]
+// [MermaidChart: 12399278-c919-480d-810c-7701d238c6ab]
+// [MermaidChart: 12399278-c919-480d-810c-7701d238c6ab]
+// [MermaidChart: 12399278-c919-480d-810c-7701d238c6ab]
+// [MermaidChart: 12399278-c919-480d-810c-7701d238c6ab]
+// [MermaidChart: 12399278-c919-480d-810c-7701d238c6ab]
+// [MermaidChart: 12399278-c919-480d-810c-7701d238c6ab]
+// [MermaidChart: 12399278-c919-480d-810c-7701d238c6ab]
+// [MermaidChart: f143b6d7-c37b-4f11-8c54-9c76945cd048]

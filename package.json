@@ -1,0 +1,19 @@
+{
+  "name": "stremio-core-ts-wrapper",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "scripts": {},
+  "dependencies": {
+    "@tanstack/react-query": "^5.90.10",
+    "@stremio/stremio-core-web": "^0.50.0",
+    "react": "19.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.2.6",
+    "esbuild": "^0.27.0",
+    "eslint": "^9",
+    "typescript": "^5"
+  }
+}
