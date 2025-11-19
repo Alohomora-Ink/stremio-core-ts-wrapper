@@ -1,63 +1,30 @@
-import type { AddonDescriptor } from '../common/addon';
+import type { AddonDescriptor } from "../common/addon";
 
-/**
- * User profile information
- */
-export interface Profile {
+export interface UserProfile {
     _id: string;
     email: string;
     avatar?: string;
+    fbId?: string;
     gdpr_consent?: {
         tos: boolean;
         privacy: boolean;
         marketing: boolean;
         from: string;
     };
+    // TODO: uth token is handled internally by Core, but sometimes exposed here
+    token?: string;
 }
 
-/**
- * Library item representing content in user's library
- */
-export interface LibraryItem {
-    _id: string;
-    name: string;
-    type: 'movie' | 'series' | 'channel' | 'tv';
-    poster?: string;
-    removed: boolean;
-    temp: boolean;
-    _ctime: Date | string;
-    _mtime: Date | string;
-    state: {
-        lastWatched?: Date | string;
-        timeWatched: number;
-        timeOffset: number;
-        overallTimeWatched: number;
-        timesWatched: number;
-        flaggedWatched: boolean;
-        duration: number;
-        video_id?: string;
-        season?: number;
-        episode?: number;
-    };
-    behaviorHints?: {
-        defaultVideoId?: string;
-    };
-}
-
-/**
- * Context state - the main state model
- * Contains user info, library, addons, and settings
- */
 export interface CtxState {
-    profile: Profile | null;
+    profile: UserProfile | null;
     library: {
-        items: LibraryItem[];
+        items: Record<string, unknown>;
     };
     addons: {
         catalogs: AddonDescriptor[];
-        // Other addon-related data
+        installed: AddonDescriptor[];
     };
-    content?: {
-        type: 'Ready' | 'Loading' | 'Error';
+    notifications: {
+        items: Record<string, unknown>;
     };
 }

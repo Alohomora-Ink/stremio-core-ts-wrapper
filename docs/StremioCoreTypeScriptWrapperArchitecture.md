@@ -1,4 +1,4 @@
-# Stremio Core TypeScript Wrapper Architecture
+# Stremio Core TypeScript Wrapper Architecture (Subject to change)
 
 ## Core Concepts
 

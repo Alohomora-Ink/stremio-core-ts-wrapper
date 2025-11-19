@@ -1,13 +1,19 @@
-import type { CtxAction } from './ctx-actions';
-import type { LoadAction } from './load-actions';
+import type { ActionCtx } from "./ctx";
+import type { ActionLoad } from "./load";
+import type { ActionPlayer } from "./player";
+import type { ActionStreamingServer } from "./streaming-server";
 
-/**
- * All possible actions that can be dispatched to Stremio Core
- */
+// Export sub-types for ease of use
+export * from "./ctx";
+export * from "./load";
+export * from "./player";
+export * from "./streaming-server";
+
+// --- ROOT ACTION ---
 export type Action =
-    | LoadAction
-    | CtxAction
-    | 'Unload';
-
-export * from './ctx-actions';
-export * from './load-actions';
+    | { Ctx: ActionCtx }
+    | { Player: ActionPlayer }
+    | { StreamingServer: ActionStreamingServer }
+    | { Load: ActionLoad }
+    | { Addon: { transport_url: string; action: "Delete" } }
+    | "Unload";
