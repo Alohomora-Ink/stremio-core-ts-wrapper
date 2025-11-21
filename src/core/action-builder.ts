@@ -1,61 +1,134 @@
-import type { MetaItem } from "../types/common/meta-item";
-import type { AddonDescriptor } from "../types/common/addon";
+import type { MetaItem, AddonDescriptor } from "../types/models";
 import type { ProfileSettings } from "../types/actions/ctx/settings";
 
+// ============================================================================
+//  1. ROOT ACTION HELPERS
+// ============================================================================
+
 /**
- * Helper to construct the specific JSON shape Stremio Core expects.
- * Pattern: { action: "Variant", args: Payload }
+ * Builds a Root Action with NO arguments (Unit Variant).
+ * Pattern: { "action": "Name", "args": null }
  */
-const buildAction = (variant: string, args?: any) => {
+const buildActionNullArgs = (action: string) => {
     return JSON.stringify({
-        action: variant,
-        args: args ?? null, // Force null if undefined
+        action: action,
+        args: null,
     });
 };
 
 /**
- * Helper for nested enums (Ctx, Player)
- * Pattern: { action: "Root", args: { action: "SubVariant", args: Payload } }
+ * Builds a Root Action with EMPTY arguments (Empty Struct Variant).
+ * Pattern: { "action": "Name", "args": {} }
  */
-const buildNestedAction = (root: string, subVariant: string, subArgs?: any) => {
+const buildActionEmptyArgs = (action: string) => {
+    return JSON.stringify({
+        action: action,
+        args: {},
+    });
+};
+
+/**
+ * Builds a Root Action with specific arguments (Tuple/Struct Variant).
+ * Pattern: { "action": "Name", "args": ... }
+ */
+const buildActionWithArgs = (action: string, args: any) => {
+    return JSON.stringify({
+        action: action,
+        args: args,
+    });
+};
+
+// ============================================================================
+//  2. NESTED ACTION HELPERS (Root -> SubAction)
+// ============================================================================
+
+/**
+ * Builds a Nested Action where the SubAction has NO arguments (Unit Variant).
+ * Pattern: { "action": "Root", "args": { "action": "Sub", "args": null } }
+ */
+const buildActionWithArgsSubActionNullArgs = (root: string, subAction: string) => {
     return JSON.stringify({
         action: root,
         args: {
-            action: subVariant,
-            args: subArgs ?? null, // Force null if undefined
+            action: subAction,
+            args: null,
         },
     });
 };
 
 /**
- * Helper for Load actions which use 'model' instead of 'action' for the sub-variant
- * Pattern: { action: "Load", args: { model: "ModelName", args: Payload } }
+ * Builds a Nested Action where the SubAction has EMPTY arguments (Empty Struct Variant).
+ * Pattern: { "action": "Root", "args": { "action": "Sub", "args": {} } }
  */
-const buildLoadAction = (modelName: string, args?: any) => {
+const buildActionWithArgsSubActionEmptyArgs = (root: string, subAction: string) => {
+    return JSON.stringify({
+        action: root,
+        args: {
+            action: subAction,
+            args: {},
+        },
+    });
+};
+
+/**
+ * Builds a Nested Action where the SubAction has specific arguments.
+ * Pattern: { "action": "Root", "args": { "action": "Sub", "args": ... } }
+ */
+const buildActionWithArgsSubActionWithArgs = (root: string, subAction: string, args: any) => {
+    return JSON.stringify({
+        action: root,
+        args: {
+            action: subAction,
+            args: args,
+        },
+    });
+};
+
+// ============================================================================
+//  3. LOAD MODEL HELPER
+// ============================================================================
+
+/**
+ * Builds a Load Action for a specific Model.
+ * Pattern: { "action": "Load", "args": { "model": "Name", "args": ... } }
+ */
+const buildLoadAction = (modelName: string, args: any) => {
     return JSON.stringify({
         action: "Load",
         args: {
             model: modelName,
-            args: args ?? {}, // Load usually expects a struct, so {} is safer than null
+            args: args ?? {},
         },
     });
 };
+
+// ============================================================================
+//  ACTION BUILDER CLASS
+// ============================================================================
 
 export class ActionBuilder {
     // ==========================================================================
     //  CTX: AUTHENTICATION
     // ==========================================================================
     static Auth = {
+        /**
+         * Authenticate with Email/Password
+         * Pattern: Ctx -> Authenticate(Login)
+         */
         login: (email: string, password: string): string => {
-            return buildNestedAction("Ctx", "Authenticate", {
+            return buildActionWithArgsSubActionWithArgs("Ctx", "Authenticate", {
                 type: "Login",
                 email,
                 password,
             });
         },
 
+        /**
+         * Register a new account
+         * Pattern: Ctx -> Authenticate(Register)
+         */
         register: (email: string, password: string, consent: any): string => {
-            return buildNestedAction("Ctx", "Authenticate", {
+            return buildActionWithArgsSubActionWithArgs("Ctx", "Authenticate", {
                 type: "Register",
                 email,
                 password,
@@ -63,8 +136,12 @@ export class ActionBuilder {
             });
         },
 
+        /**
+         * Logout current user
+         * Pattern: Ctx -> Logout (Unit Variant)
+         */
         logout: (): string => {
-            return buildNestedAction("Ctx", "Logout");
+            return buildActionWithArgsSubActionNullArgs("Ctx", "Logout");
         },
     };
 
@@ -72,23 +149,36 @@ export class ActionBuilder {
     //  CTX: LIBRARY & USER DATA
     // ==========================================================================
     static User = {
+        /**
+         * Pull user profile data from API
+         * Pattern: Ctx -> PullUserFromAPI (Struct Variant {})
+         */
         pullUser: (): string => {
-            //  {"action":"Ctx","args":{"action":"PullUserFromAPI","args":null}}
-            return buildNestedAction("Ctx", "PullUserFromAPI");
+            return buildActionWithArgsSubActionEmptyArgs("Ctx", "PullUserFromAPI");
         },
 
-
+        /**
+         * Pull installed addons from API
+         * Pattern: Ctx -> PullAddonsFromAPI (Unit Variant null)
+         */
         pullAddons: (): string => {
-            //  {"action":"Ctx","args":{"action":"PullAddonsFromAPI","args":null}}
-            return buildNestedAction("Ctx", "PullAddonsFromAPI");
+            return buildActionWithArgsSubActionNullArgs("Ctx", "PullAddonsFromAPI");
         },
 
+        /**
+         * Sync library items
+         * Pattern: Ctx -> SyncLibraryWithAPI (Unit Variant null)
+         */
         syncLibrary: (): string => {
-            return buildNestedAction("Ctx", "SyncLibraryWithAPI");
+            return buildActionWithArgsSubActionNullArgs("Ctx", "SyncLibraryWithAPI");
         },
 
+        /**
+         * Update user profile settings
+         * Pattern: Ctx -> UpdateSettings(Settings)
+         */
         updateSettings: (settings: ProfileSettings): string => {
-            return buildNestedAction("Ctx", "UpdateSettings", settings);
+            return buildActionWithArgsSubActionWithArgs("Ctx", "UpdateSettings", settings);
         },
     };
 
@@ -96,20 +186,36 @@ export class ActionBuilder {
     //  CTX: LIBRARY MANAGEMENT
     // ==========================================================================
     static Library = {
+        /**
+         * Add a meta item to the library
+         * Pattern: Ctx -> AddToLibrary(MetaItem)
+         */
         addItem: (item: MetaItem): string => {
-            return buildNestedAction("Ctx", "AddToLibrary", item);
+            return buildActionWithArgsSubActionWithArgs("Ctx", "AddToLibrary", item);
         },
 
+        /**
+         * Remove an item from the library
+         * Pattern: Ctx -> RemoveFromLibrary(ID)
+         */
         removeItem: (id: string): string => {
-            return buildNestedAction("Ctx", "RemoveFromLibrary", id);
+            return buildActionWithArgsSubActionWithArgs("Ctx", "RemoveFromLibrary", id);
         },
 
+        /**
+         * Rewind a library item
+         * Pattern: Ctx -> RewindLibraryItem(ID)
+         */
         rewind: (id: string): string => {
-            return buildNestedAction("Ctx", "RewindLibraryItem", id);
+            return buildActionWithArgsSubActionWithArgs("Ctx", "RewindLibraryItem", id);
         },
 
+        /**
+         * Toggle notifications for a library item
+         * Pattern: Ctx -> ToggleNotifications(ID)
+         */
         toggleNotifications: (id: string): string => {
-            return buildNestedAction("Ctx", "ToggleNotifications", id);
+            return buildActionWithArgsSubActionWithArgs("Ctx", "ToggleNotifications", id);
         },
     };
 
@@ -117,28 +223,47 @@ export class ActionBuilder {
     //  CTX: ADDONS MANAGEMENT
     // ==========================================================================
     static Addons = {
+        /**
+         * Install an addon
+         * Pattern: Ctx -> InstallAddon(Descriptor)
+         */
         install: (descriptor: AddonDescriptor): string => {
-            return buildNestedAction("Ctx", "InstallAddon", descriptor);
+            return buildActionWithArgsSubActionWithArgs("Ctx", "InstallAddon", descriptor);
         },
 
+        /**
+         * Uninstall an addon
+         * Pattern: Ctx -> UninstallAddon(TransportUrl)
+         */
         uninstall: (transportUrl: string): string => {
-            return buildNestedAction("Ctx", "UninstallAddon", transportUrl);
+            return buildActionWithArgsSubActionWithArgs("Ctx", "UninstallAddon", transportUrl);
         },
 
+        /**
+         * Upgrade an addon
+         * Pattern: Ctx -> UpgradeAddon(Descriptor)
+         */
         upgrade: (descriptor: AddonDescriptor): string => {
-            return buildNestedAction("Ctx", "UpgradeAddon", descriptor);
+            return buildActionWithArgsSubActionWithArgs("Ctx", "UpgradeAddon", descriptor);
         },
     };
 
     // ==========================================================================
     //  LOAD: NAVIGATION (Routing)
-    //  Uses 'model' instead of 'action' in the args
     // ==========================================================================
     static Load = {
+        /**
+         * Load the Board (Catalog Board)
+         * Pattern: Load -> CatalogsWithExtra
+         */
         board: (extra: { name: string; value: string }[] = []): string => {
             return buildLoadAction("CatalogsWithExtra", { extra });
         },
 
+        /**
+         * Load the Library Page
+         * Pattern: Load -> LibraryWithFilters
+         */
         library: (
             type: string | null,
             sort: "lastwatched" | "name" | "timeswatched" = "lastwatched",
@@ -149,6 +274,10 @@ export class ActionBuilder {
             });
         },
 
+        /**
+         * Load a Discover Page (Catalog)
+         * Pattern: Load -> CatalogWithFilters
+         */
         discover: (
             addonUrl: string,
             type: string,
@@ -163,6 +292,10 @@ export class ActionBuilder {
             });
         },
 
+        /**
+         * Load the Calendar
+         * Pattern: Load -> Calendar
+         */
         calendar: (year?: number, month?: number): string => {
             const date = new Date();
             return buildLoadAction("Calendar", {
@@ -172,10 +305,18 @@ export class ActionBuilder {
             });
         },
 
+        /**
+         * Load Meta Details
+         * Pattern: Load -> MetaDetails
+         */
         metaDetails: (type: string, id: string, video_id?: string): string => {
             return buildLoadAction("MetaDetails", { type, id, video_id });
         },
 
+        /**
+         * Load the Player
+         * Pattern: Load -> Player
+         */
         player: (
             type: string,
             id: string,
@@ -184,42 +325,70 @@ export class ActionBuilder {
         ): string => {
             return buildLoadAction("Player", { type, id, video_id, stream });
         },
+
+        /**
+         * Load Continue Watching Preview (For Board)
+         * Pattern: Load -> ContinueWatchingPreview
+         */
+        continueWatchingPreview: (): string => {
+            return buildLoadAction("ContinueWatchingPreview", {});
+        },
     };
 
     // ==========================================================================
     //  PLAYER: PLAYBACK SYNC
     // ==========================================================================
     static Player = {
+        /**
+         * Update time watched
+         * Pattern: Player -> TimeChanged(Args)
+         */
         timeChanged: (
             time: number,
             duration: number,
             device: string = "web"
         ): string => {
-            return buildNestedAction("Player", "TimeChanged", {
+            return buildActionWithArgsSubActionWithArgs("Player", "TimeChanged", {
                 time,
                 duration,
                 device,
             });
         },
 
+        /**
+         * Mark playback as ended
+         * Pattern: Player -> Ended(Args)
+         */
         ended: (
             time: number,
             duration: number,
             device: string = "web"
         ): string => {
-            return buildNestedAction("Player", "Ended", { time, duration, device });
+            return buildActionWithArgsSubActionWithArgs("Player", "Ended", { time, duration, device });
         },
 
+        /**
+         * Pause playback
+         * Pattern: Player -> Paused (Unit Variant)
+         */
         paused: (): string => {
-            return buildNestedAction("Player", "Paused");
+            return buildActionWithArgsSubActionNullArgs("Player", "Paused");
         },
 
+        /**
+         * Resume playback
+         * Pattern: Player -> Playing (Unit Variant)
+         */
         playing: (): string => {
-            return buildNestedAction("Player", "Playing");
+            return buildActionWithArgsSubActionNullArgs("Player", "Playing");
         },
 
+        /**
+         * Update stream stats
+         * Pattern: Player -> UpdateStats(Args)
+         */
         updateStats: (hash: string, size: number): string => {
-            return buildNestedAction("Player", "UpdateStats", { hash, size });
+            return buildActionWithArgsSubActionWithArgs("Player", "UpdateStats", { hash, size });
         },
     };
 
@@ -227,8 +396,12 @@ export class ActionBuilder {
     //  STREAMING SERVER
     // ==========================================================================
     static StreamingServer = {
+        /**
+         * Reload the streaming server
+         * Pattern: StreamingServer -> Reload (Unit Variant)
+         */
         reload: (): string => {
-            return buildNestedAction("StreamingServer", "Reload");
+            return buildActionWithArgsSubActionNullArgs("StreamingServer", "Reload");
         },
     };
 }

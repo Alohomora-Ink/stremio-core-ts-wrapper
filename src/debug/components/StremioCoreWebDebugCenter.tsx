@@ -1,24 +1,36 @@
-import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
+  Activity,
+  CalendarArrowDown,
   CheckCircle,
-  Zap,
+  CheckCircle2,
+  Clock,
+  Copy,
+  Database,
+  FileBox,
+  Flame,
+  History,
   Loader2,
+  Logs,
   Play,
   Send,
-  Activity,
-  Database,
-  User,
-  Trash2,
-  Clock,
   Terminal,
-  History,
+  Trash2,
+  User,
   X,
-  Flame,
-  FileBox,
-  CalendarArrowDown,
-  Logs,
+  Zap
 } from "lucide-react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+
+import {
+  Listbox,
+  ListboxButton,
+  ListboxOption,
+  ListboxOptions
+} from "@headlessui/react";
+
+import { cn } from "../../../../lib/utils";
 import { CoreTransport } from "../../core/core-transport";
+import { JSONTreeCustom } from "./JsonThreeCustom";
 
 // ============================================================================
 // TYPES
@@ -71,7 +83,7 @@ const VALID_MODELS = [
   "installed_addons",
   "addon_details",
   "streaming_server",
-  "player",
+  "player"
 ] as const;
 
 const COMMON_ACTIONS = [
@@ -79,7 +91,7 @@ const COMMON_ACTIONS = [
     label: "Sync Addons & User",
     action: { action: "Ctx", args: { action: "PullAddonsFromAPI" } },
     model: "ctx",
-    description: "Fetch available addons and user data",
+    description: "Fetch available addons and user data"
   },
   {
     label: "Load Board",
@@ -87,11 +99,11 @@ const COMMON_ACTIONS = [
       action: "Load",
       args: {
         model: "CatalogsWithExtra",
-        args: { extra: [] },
-      },
+        args: { extra: [] }
+      }
     },
     model: "board",
-    description: "Load the main catalog board",
+    description: "Load the main catalog board"
   },
   {
     label: "Load Library",
@@ -103,13 +115,13 @@ const COMMON_ACTIONS = [
           request: {
             type: null,
             sort: "lastwatched",
-            page: 1,
-          },
-        },
-      },
+            page: 1
+          }
+        }
+      }
     },
     model: "library",
-    description: "Load user's library",
+    description: "Load user's library"
   },
   {
     label: "Load Calendar",
@@ -120,12 +132,12 @@ const COMMON_ACTIONS = [
         args: {
           year: new Date().getFullYear(),
           month: new Date().getMonth() + 1,
-          filters: [],
-        },
-      },
+          filters: []
+        }
+      }
     },
     model: "calendar",
-    description: "Load calendar for current month",
+    description: "Load calendar for current month"
   },
   {
     label: "Load Discover (Movies)",
@@ -140,14 +152,14 @@ const COMMON_ACTIONS = [
               resource: "catalog",
               type: "movie",
               id: "top",
-              extra: [],
-            },
-          },
-        },
-      },
+              extra: []
+            }
+          }
+        }
+      }
     },
     model: "discover",
-    description: "Load popular movies from Cinemeta",
+    description: "Load popular movies from Cinemeta"
   },
   {
     label: "Load Installed Addons",
@@ -156,19 +168,19 @@ const COMMON_ACTIONS = [
       args: {
         model: "InstalledAddonsWithFilters",
         args: {
-          request: { type: null },
-        },
-      },
+          request: { type: null }
+        }
+      }
     },
     model: "installed_addons",
-    description: "Get list of installed addons",
+    description: "Get list of installed addons"
   },
   {
     label: "Logout",
     action: { action: "Ctx", args: { action: "Logout" } },
     model: "ctx",
-    description: "Clear user session",
-  },
+    description: "Clear user session"
+  }
 ];
 
 // ============================================================================
@@ -194,25 +206,25 @@ function EventRow({ item }: { item: EventHistoryItem }) {
     >
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`w-full flex items-center justify-between p-2 text-left hover:bg-zinc-800/50 transition-colors select-none group`}
+        className={`group flex w-full items-center justify-between p-2 text-left transition-colors select-none hover:bg-zinc-800/50`}
       >
         <div className="flex items-center gap-3 overflow-hidden">
           <div
             className={`text-zinc-500 transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}
           >
-            <Play className="w-2 h-2 fill-current" />
+            <Play className="h-2 w-2 fill-current" />
           </div>
 
-          <div className="flex flex-col min-w-0">
+          <div className="flex min-w-0 flex-col">
             <div
-              className={`text-[11px] font-bold ${textColor}  font-mono flex items-center gap-2`}
+              className={`text-[11px] font-bold ${textColor} flex items-center gap-2 font-mono`}
             >
               {item.type}
-              <span className="text-[9px] text-zinc-500 font-normal truncate">
+              <span className="truncate text-[9px] font-normal text-zinc-500">
                 {!isNewState && !isOpen && [item.payload.event]}
               </span>
               {!isOpen && isNewState && Array.isArray(item.payload) && (
-                <span className="text-[9px] text-zinc-500 font-normal truncate">
+                <span className="truncate text-[9px] font-normal text-zinc-500">
                   [
                   {item.payload
                     .map((m) => (typeof m === "string" ? m : m.model))
@@ -224,15 +236,15 @@ function EventRow({ item }: { item: EventHistoryItem }) {
           </div>
         </div>
 
-        <span className="text-[9px] text-zinc-600 font-mono shrink-0 group-hover:text-zinc-500">
+        <span className="shrink-0 font-mono text-[9px] text-zinc-600 group-hover:text-zinc-500">
           {item.timestamp}
         </span>
       </button>
 
       {isOpen && (
-        <div className="p-2 pl-6 bg-[#050505] border-t border-zinc-800/50 shadow-inner">
+        <div className="border-t border-zinc-800/50 bg-[#050505] p-2 pl-6 shadow-inner">
           <pre
-            className={`text-[10px] font-mono overflow-x-auto ${isNewState ? "text-blue-300/80" : "text-purple-300/80"}`}
+            className={`overflow-x-auto font-mono text-[10px] ${isNewState ? "text-blue-300/80" : "text-purple-300/80"}`}
           >
             {JSON.stringify(item.payload, null, 2)}
           </pre>
@@ -246,7 +258,7 @@ function EventRow({ item }: { item: EventHistoryItem }) {
 // MAIN COMPONENT
 // ============================================================================
 
-export default function StremioDebugTool() {
+export default function StremioCoreWebDebugCenter() {
   // --- Core State ---
   const [transport, setTransport] = useState<CoreTransport | null>(null);
   const [isInitializing, setIsInitializing] = useState(false);
@@ -273,13 +285,16 @@ export default function StremioDebugTool() {
     JSON.stringify(
       { action: "Ctx", args: { action: "PullAddonsFromAPI" } },
       null,
-      2,
-    ),
+      2
+    )
   );
   const [customTargetModel, setCustomTargetModel] = useState("ctx");
 
   // Refs
   const heartbeatInterval = useRef<NodeJS.Timeout | null>(null);
+
+  // Json tree
+  const [copiedFullState, setCopiedFullState] = useState(false);
 
   // ============================================================================
   // LOGGING UTILITIES
@@ -291,18 +306,18 @@ export default function StremioDebugTool() {
         hour12: false,
         hour: "2-digit",
         minute: "2-digit",
-        second: "2-digit",
+        second: "2-digit"
       });
 
       setLogs((prev) => [
         { id: crypto.randomUUID(), timestamp, message, level, details },
-        ...prev.slice(0, 99),
+        ...prev.slice(0, 99)
       ]);
 
       if (level === "error") console.error(`[${level}]`, message, details);
       else console.log(`[${level}]`, message);
     },
-    [],
+    []
   );
 
   // ============================================================================
@@ -318,7 +333,7 @@ export default function StremioDebugTool() {
     try {
       const core = new CoreTransport({
         appVersion: "5.0.0-beta.26.40",
-        shellVersion: "5.0.20",
+        shellVersion: "5.0.20"
       });
       await core.init();
       setTransport(core);
@@ -358,9 +373,9 @@ export default function StremioDebugTool() {
           id: crypto.randomUUID(),
           timestamp: new Date().toLocaleTimeString(),
           type: "NewState",
-          payload: args,
+          payload: args
         },
-        ...prev.slice(0, 99),
+        ...prev.slice(0, 99)
       ]);
 
       if (!reactiveMode) return;
@@ -393,9 +408,9 @@ export default function StremioDebugTool() {
           id: crypto.randomUUID(),
           timestamp: new Date().toLocaleTimeString(),
           type: "CoreEvent",
-          payload: args,
+          payload: args
         },
-        ...prev.slice(0, 49),
+        ...prev.slice(0, 49)
       ]);
       // Log significant events
       if (
@@ -433,7 +448,7 @@ export default function StremioDebugTool() {
         addLog(`✗ Get State Failed: ${targetModel}`, "error", error.message);
       }
     },
-    [transport, selectedModel, addLog],
+    [transport, selectedModel, addLog]
   );
 
   const dispatchAction = useCallback(
@@ -450,9 +465,9 @@ export default function StremioDebugTool() {
             timestamp: new Date().toLocaleTimeString(),
             action: action.action,
             model,
-            status: "success",
+            status: "success"
           },
-          ...prev.slice(0, 49),
+          ...prev.slice(0, 49)
         ]);
         setTimeout(() => getState(model), 100);
       } catch (error: any) {
@@ -464,13 +479,13 @@ export default function StremioDebugTool() {
             action: action.action,
             model,
             status: "error",
-            error: error.message,
+            error: error.message
           },
-          ...prev.slice(0, 49),
+          ...prev.slice(0, 49)
         ]);
       }
     },
-    [transport, getState, addLog],
+    [transport, getState, addLog]
   );
 
   const handleCustomDispatch = () => {
@@ -499,9 +514,9 @@ export default function StremioDebugTool() {
         args: {
           type: "Login",
           email: authEmail,
-          password: authPassword,
-        },
-      },
+          password: authPassword
+        }
+      }
     };
     await dispatchAction(action, "ctx");
   };
@@ -537,8 +552,8 @@ export default function StremioDebugTool() {
           action: "Player",
           args: {
             action: "TimeChanged",
-            args: { time, duration, device: "web" },
-          },
+            args: { time, duration, device: "web" }
+          }
         };
         // Dispatch quietly (fire and forget)
         transport.dispatch(action, "player").catch(console.error);
@@ -551,20 +566,20 @@ export default function StremioDebugTool() {
   // ============================================================================
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-200 font-sans selection:bg-purple-500/30">
+    <div className="min-h-screen bg-zinc-950 font-sans text-zinc-200 selection:bg-purple-500/30">
       {/* TOP BAR */}
-      <div className="border-b border-zinc-800 bg-zinc-900/50 backdrop-blur sticky top-0 z-10 px-6 py-3 flex items-center justify-between">
+      <div className="sticky top-0 z-10 flex items-center justify-between border-b border-zinc-800 bg-zinc-900/50 px-6 py-3 backdrop-blur">
         <div className="flex items-center gap-3">
-          <Activity className="w-5 h-5 text-purple-400" />
+          <Activity className="h-5 w-5 text-purple-400" />
           <h1 className="text-lg font-bold tracking-tight text-white">
             Stremio Core Debugger
           </h1>
         </div>
 
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-full px-3 py-1 text-xs">
+          <div className="flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900 px-3 py-1 text-xs">
             <div
-              className={`w-2 h-2 rounded-full ${transport ? "bg-green-500 animate-pulse" : "bg-red-500"}`}
+              className={`h-2 w-2 rounded-full ${transport ? "animate-pulse bg-green-500" : "bg-red-500"}`}
             />
             <span className="font-mono font-medium text-zinc-400">
               {transport ? "WORKER ACTIVE" : "OFFLINE"}
@@ -574,53 +589,51 @@ export default function StremioDebugTool() {
           <button
             onClick={initializeStremioCore}
             disabled={isInitializing || !!transport}
-            className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all
-                 ${
-                   transport
-                     ? "bg-green-900/20 text-green-400 border border-green-900 cursor-default"
-                     : "bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-900/20"
-                 }
-              `}
+            className={`flex items-center gap-2 rounded-md px-4 py-1.5 text-sm font-medium transition-all ${
+              transport
+                ? "cursor-default border border-green-900 bg-green-900/20 text-green-400"
+                : "bg-purple-600 text-white shadow-lg shadow-purple-900/20 hover:bg-purple-500"
+            } `}
           >
             {isInitializing ? (
-              <Loader2 className="animate-spin w-4 h-4" />
+              <Loader2 className="h-4 w-4 animate-spin" />
             ) : transport ? (
-              <CheckCircle className="w-4 h-4" />
+              <CheckCircle className="h-4 w-4" />
             ) : (
-              <Play className="w-4 h-4" />
+              <Play className="h-4 w-4" />
             )}
             {transport ? "Initialized" : "Start Core"}
           </button>
         </div>
       </div>
 
-      <div className="p-6 max-w-[1600px] mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6 h-[calc(100vh-80px)]">
+      <div className="mx-auto grid h-[calc(100vh-80px)] max-w-[1600px] grid-cols-1 gap-6 p-6 lg:grid-cols-12">
         {/* LEFT: CONTROLS (3 Cols) */}
-        <div className="col-span-3 flex flex-col gap-4 h-full overflow-y-auto pr-2 custom-scrollbar">
+        <div className="custom-scrollbar col-span-3 flex h-full flex-col gap-4 overflow-y-auto pr-2">
           {/* Quick Actions */}
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden flex flex-col shrink-0">
-            <div className="px-4 py-3 border-b border-zinc-800 bg-zinc-800/30 flex items-center gap-2">
-              <Zap className="w-4 h-4 text-yellow-500" />
-              <h2 className="text-xs font-bold text-zinc-300 uppercase tracking-wider">
+          <div className="flex shrink-0 flex-col overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900">
+            <div className="flex items-center gap-2 border-b border-zinc-800 bg-zinc-800/30 px-4 py-3">
+              <Zap className="h-4 w-4 text-yellow-500" />
+              <h2 className="text-xs font-bold tracking-wider text-zinc-300 uppercase">
                 Quick Actions
               </h2>
             </div>
 
-            <div className="p-2 space-y-1">
+            <div className="space-y-1 p-2">
               {COMMON_ACTIONS.map((item, idx) => (
                 <button
                   key={idx}
                   type="button"
                   onClick={() => dispatchAction(item.action, item.model)}
                   disabled={!transport}
-                  className="flex items-center w-full text-left px-3 py-2 rounded hover:bg-zinc-800 disabled:opacity-50 transition-colors group"
+                  className="group flex w-full items-center rounded px-3 py-2 text-left transition-colors hover:bg-zinc-800 disabled:opacity-50"
                 >
-                  <Send className="w-4 h-4 shrink-0 text-zinc-400 group-hover:text-white mr-3" />
-                  <div className="flex-1 min-w-0">
+                  <Send className="mr-3 h-4 w-4 shrink-0 text-zinc-400 group-hover:text-white" />
+                  <div className="min-w-0 flex-1">
                     <div className="text-sm font-medium text-zinc-300 group-hover:text-white">
                       {item.label}
                     </div>
-                    <div className="text-[10px] text-zinc-500 font-mono truncate">
+                    <div className="truncate font-mono text-[10px] text-zinc-500">
                       {item.description}
                     </div>
                   </div>
@@ -630,30 +643,32 @@ export default function StremioDebugTool() {
           </div>
 
           {/* Advanced Controls */}
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden flex flex-col gap-4 p-4">
+          <div className="flex flex-col gap-4 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900 p-4">
             {/* Auth */}
             <form onSubmit={handleLogin} className="space-y-2">
-              <div className="flex items-center gap-2 text-xs font-bold text-zinc-400 uppercase mb-1">
-                <User className="w-3 h-3" /> Auth Simulator
+              <div className="mb-1 flex items-center gap-2 text-xs font-bold text-zinc-400 uppercase">
+                <User className="h-3 w-3 text-yellow-500" /> Auth Simulator
               </div>
               <input
                 type="email"
                 placeholder="Email"
                 value={authEmail}
                 onChange={(e) => setAuthEmail(e.target.value)}
-                className="w-full bg-black/50 border border-zinc-700 rounded px-2 py-1.5 text-xs"
+                className="w-full rounded border border-zinc-700 bg-black/50 px-2 py-1.5 text-xs"
+                autoComplete="email"
               />
               <input
                 type="password"
                 placeholder="Password"
                 value={authPassword}
                 onChange={(e) => setAuthPassword(e.target.value)}
-                className="w-full bg-black/50 border border-zinc-700 rounded px-2 py-1.5 text-xs"
+                className="w-full rounded border border-zinc-700 bg-black/50 px-2 py-1.5 text-xs"
+                autoComplete="current-password"
               />
               <button
                 type="submit"
                 disabled={!transport}
-                className="w-full py-1.5 bg-zinc-800 hover:bg-zinc-700 text-xs font-medium rounded"
+                className="w-full rounded bg-zinc-800 py-1.5 text-xs font-medium hover:bg-zinc-700"
               >
                 Login
               </button>
@@ -663,26 +678,26 @@ export default function StremioDebugTool() {
 
             {/* Decoder */}
             <div className="space-y-2">
-              <div className="flex items-center gap-2 text-xs font-bold text-zinc-400 uppercase mb-1">
-                <Database className="w-3 h-3" /> Stream Decoder
+              <div className="mb-1 flex items-center gap-2 text-xs font-bold text-zinc-400 uppercase">
+                <Database className="h-3 w-3 text-yellow-500" /> Stream Decoder
               </div>
               <div className="flex gap-2">
                 <input
                   placeholder="magnet:?..."
                   value={magnetLink}
                   onChange={(e) => setMagnetLink(e.target.value)}
-                  className="flex-1 bg-black/50 border border-zinc-700 rounded px-2 py-1.5 text-xs font-mono"
+                  className="flex-1 rounded border border-zinc-700 bg-black/50 px-2 py-1.5 font-mono text-xs"
                 />
                 <button
                   onClick={handleDecode}
                   disabled={!transport}
-                  className="px-3 bg-zinc-800 hover:bg-zinc-700 rounded text-xs"
+                  className="rounded bg-zinc-800 px-3 text-xs hover:bg-zinc-700"
                 >
-                  <Send className="w-4 h-6 shrink-0 text-zinc-400 mr-0.5 mt-0.5" />
+                  <Send className="mt-0.5 mr-0.5 h-6 w-4 shrink-0 text-zinc-400" />
                 </button>
               </div>
               {decodedStream && (
-                <pre className="text-[9px] bg-black/50 p-2 rounded text-zinc-400 overflow-x-auto">
+                <pre className="overflow-x-auto rounded bg-black/50 p-2 text-[9px] text-zinc-400">
                   {JSON.stringify(decodedStream, null, 2)}
                 </pre>
               )}
@@ -692,23 +707,23 @@ export default function StremioDebugTool() {
 
             {/* Heartbeat */}
             <div className="flex items-center justify-between">
-              <div className="text-xs font-bold text-zinc-400 uppercase flex items-center gap-2">
-                <Clock className="w-3 h-3" /> Player Heartbeat
+              <div className="flex items-center gap-2 text-xs font-bold text-zinc-400 uppercase">
+                <Clock className="h-3 w-3 text-yellow-500" /> Player Heartbeat
               </div>
               <button
                 onClick={toggleHeartbeat}
                 disabled={!transport}
-                className={`text-[10px] px-2 py-1 rounded uppercase font-bold ${heartbeatActive ? "bg-red-900/50 text-red-400 animate-pulse" : "bg-zinc-800 text-zinc-400"}`}
+                className={`rounded px-2 py-1 text-[10px] font-bold uppercase ${heartbeatActive ? "animate-pulse bg-red-900/50 text-red-400" : "bg-zinc-800 text-zinc-400"}`}
               >
                 <div className="flex items-center gap-2">
                   {heartbeatActive ? (
                     <>
-                      <Flame className="w-3 h-3 shrink-0 text-red-400" />
+                      <Flame className="h-3 w-3 shrink-0 text-red-400" />
                       <span>Active</span>
                     </>
                   ) : (
                     <>
-                      <X className="w-3 h-3 shrink-0 text-zinc-400" />
+                      <X className="h-3 w-3 shrink-0 text-zinc-400" />
                       <span>Inactive</span>
                     </>
                   )}
@@ -718,21 +733,21 @@ export default function StremioDebugTool() {
           </div>
 
           {/* Custom Dispatch */}
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg flex-1 flex flex-col overflow-hidden">
-            <div className="px-4 py-2 border-b border-zinc-800 bg-zinc-800/30 flex items-center justify-between">
+          <div className="flex flex-1 flex-col overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900">
+            <div className="flex items-center justify-between border-b border-zinc-800 bg-zinc-800/30 px-4 py-2">
               <div className="flex items-center gap-2">
-                <Terminal className="w-3 h-3 text-zinc-400" />
-                <h2 className="text-xs font-bold text-zinc-300 uppercase tracking-wider">
+                <Terminal className="h-3 w-3 text-yellow-500" />
+                <h2 className="text-xs font-bold tracking-wider text-zinc-300 uppercase">
                   Custom Dispatch Command
                 </h2>
               </div>
             </div>
-            <div className="p-3 flex flex-col gap-2 flex-1">
+            <div className="flex flex-1 flex-col gap-2 p-3">
               <select
                 title="Target Model"
                 value={customTargetModel}
                 onChange={(e) => setCustomTargetModel(e.target.value)}
-                className="w-full bg-black/50 border border-zinc-700 rounded px-2 py-1 text-xs"
+                className="w-full rounded border border-zinc-700 bg-black/50 px-2 py-1 text-xs"
               >
                 {VALID_MODELS.map((m) => (
                   <option key={m} value={m}>
@@ -744,16 +759,16 @@ export default function StremioDebugTool() {
                 title="Custom Action in Json Format"
                 value={customActionJson}
                 onChange={(e) => setCustomActionJson(e.target.value)}
-                className="w-full flex-1 bg-black/50 border border-zinc-700 rounded p-2 text-[10px] font-mono resize-none focus:ring-1 focus:ring-purple-500 outline-none"
+                className="w-full flex-1 resize-none rounded border border-zinc-700 bg-black/50 p-2 font-mono text-[10px] outline-none focus:ring-1 focus:ring-purple-500"
               />
               <button
                 onClick={handleCustomDispatch}
                 disabled={!transport}
-                className="w-full py-1.5 bg-purple-700 hover:bg-purple-600 text-white text-xs font-bold rounded"
+                className="w-full rounded bg-purple-700 py-1.5 text-xs font-bold text-white hover:bg-purple-600"
               >
                 <div className="flex items-center justify-center gap-2">
-                  <Send className="w-4 h-4 shrink-0 text-zinc-400 mr-2" />
-                  <span className="uppercase tracking-wide">DISPATCH</span>
+                  <Send className="mr-2 h-4 w-4 shrink-0 text-zinc-400" />
+                  <span className="tracking-wide uppercase">DISPATCH</span>
                 </div>
               </button>
             </div>
@@ -761,32 +776,57 @@ export default function StremioDebugTool() {
         </div>
 
         {/* MIDDLE: STATE INSPECTOR (5 Cols) */}
-        <div className="col-span-5 flex flex-col gap-4 h-full min-h-0">
+        <div className="col-span-5 flex h-full min-h-0 flex-col gap-4">
           {/* State Viewer  */}
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg flex-1 flex flex-col min-h-0 overflow-hidden shadow-2xl">
-            <div className="px-4 py-3 border-b border-zinc-800 bg-zinc-800/30 flex items-center justify-between shrink-0">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900 shadow-2xl">
+            <div className="flex shrink-0 items-center justify-between border-b border-zinc-800 bg-zinc-800/30 px-4 py-3">
               <div className="flex items-center gap-2">
-                <FileBox className="w-4 h-4 text-yellow-500" />
-                <select
-                  title="Select Target Model"
+                <FileBox className="h-4 w-4 text-yellow-500" />
+                <Listbox
                   value={selectedModel}
-                  onChange={(e) => {
-                    setSelectedModel(e.target.value);
-                    getState(e.target.value);
+                  onChange={(value) => {
+                    setSelectedModel(value);
+                    getState(value);
                   }}
-                  className="bg-transparent border-none text-sm font-bold text-white focus:ring-0 cursor-pointer hover:text-blue-400 transition-colors"
                 >
-                  {VALID_MODELS.map((m) => (
-                    <option key={m} value={m}>
-                      {m.toUpperCase()}
-                    </option>
-                  ))}
-                </select>
+                  <div className="relative">
+                    <ListboxButton
+                      title="Select Target Model"
+                      className="cursor-pointer rounded-2xl border-none bg-zinc-900 px-3 py-2 text-sm font-bold text-yellow-500 transition-colors hover:text-blue-400 focus:ring-0 focus:outline-none"
+                    >
+                      <span className="block truncate">
+                        {selectedModel?.toUpperCase() ?? "SELECT"}
+                      </span>
+                    </ListboxButton>
+
+                    <ListboxOptions className="absolute z-50 mt-2 max-h-60 overflow-auto rounded-xl bg-zinc-800 shadow-lg focus:outline-none">
+                      {VALID_MODELS.map((m) => (
+                        <ListboxOption
+                          key={m}
+                          value={m}
+                          className={({ active, selected }) =>
+                            cn(
+                              "cursor-pointer px-3 py-2 text-sm font-bold select-none",
+                              selected ? "text-yellow-500" : "text-white",
+                              active && "bg-zinc-700 text-yellow-500",
+                              "hover:text-yellow-300"
+                            )
+                          }
+                        >
+                          {m.toUpperCase()}
+                        </ListboxOption>
+                      ))}
+                    </ListboxOptions>
+                  </div>
+                </Listbox>
               </div>
               <div className="flex items-center gap-3">
-                <label className="flex items-center gap-1.5 text-xs text-zinc-400 cursor-pointer hover:text-white">
+                <label className="flex cursor-pointer items-center gap-1.5 text-xs text-zinc-400 hover:text-white">
                   <div
-                    className={`w-2 h-2 rounded-full transition-colors ${reactiveMode ? "bg-blue-500" : "bg-zinc-700"}`}
+                    className={cn(
+                      "h-2 w-2 rounded-full transition-colors",
+                      reactiveMode ? "bg-blue-500" : "bg-zinc-700"
+                    )}
                   />
                   <input
                     type="checkbox"
@@ -800,33 +840,57 @@ export default function StremioDebugTool() {
                 <button
                   disabled={reactiveMode}
                   onClick={() => getState(selectedModel)}
-                  className={`p-1 rounded transition-colors flex items-center justify-center
-                    ${
-                      reactiveMode
-                        ? "bg-zinc-800 text-zinc-500 opacity-70 cursor-not-allowed disabled:opacity-70 disabled:cursor-not-allowed"
-                        : "bg-blue-600 hover:bg-blue-500 text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-                    }
-                  `}
+                  className={cn(
+                    "flex items-center justify-center rounded p-1 transition-colors",
+                    reactiveMode
+                      ? "cursor-not-allowed bg-zinc-800 text-zinc-500 opacity-70"
+                      : "bg-blue-600 text-white shadow-sm hover:bg-blue-500 focus:ring-2 focus:ring-blue-400 focus:outline-none"
+                  )}
                 >
                   <Activity
-                    className={`w-4 h-4 ${reactiveMode ? "text-zinc-500" : "text-white"}`}
+                    className={cn(
+                      "h-4 w-4",
+                      reactiveMode ? "text-zinc-500" : "text-white"
+                    )}
                   />
+                </button>
+
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(
+                      JSON.stringify(rawState, null, 2)
+                    );
+                    setCopiedFullState(true);
+                    setTimeout(() => setCopiedFullState(false), 2000);
+                  }}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium transition-all",
+                    copiedFullState
+                      ? "bg-green-900/30 text-green-400"
+                      : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200"
+                  )}
+                  title="Copy entire JSON"
+                >
+                  {copiedFullState ? (
+                    <>
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      <span>Copied!</span>
+                    </>
+                  ) : (
+                    <Copy className="h-3.5 w-3.5" />
+                  )}
                 </button>
               </div>
             </div>
 
-            <div className="flex-1 relative bg-[#0D0D0D] min-h-0">
+            <div className="relative min-h-0 flex-1 overflow-auto bg-[#0D0D0D]">
               {rawState ? (
-                <textarea
-                  title="load states view"
-                  readOnly
-                  value={JSON.stringify(rawState, null, 2)}
-                  className="w-full h-full absolute inset-0 bg-transparent text-green-400 font-mono text-xs p-4 resize-none focus:outline-none"
-                  spellCheck={false}
-                />
+                <div className="inline-block min-w-full">
+                  <JSONTreeCustom data={rawState} />
+                </div>
               ) : (
-                <div className="flex flex-col items-center justify-center h-full text-zinc-600 gap-2">
-                  <Database className="w-8 h-8 opacity-20" />
+                <div className="flex h-full flex-col items-center justify-center gap-2 text-zinc-600">
+                  <Database className="h-8 w-8 opacity-20" />
                   <span className="text-xs">No state loaded</span>
                 </div>
               )}
@@ -834,33 +898,33 @@ export default function StremioDebugTool() {
           </div>
 
           {/* Events History (Bottom Half - 50%) */}
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg flex-1 flex flex-col min-h-0 overflow-hidden">
-            <div className="px-3 py-2 border-b border-zinc-800 bg-zinc-800/30 flex items-center justify-between shrink-0">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900">
+            <div className="flex shrink-0 items-center justify-between border-b border-zinc-800 bg-zinc-800/30 px-3 py-2">
               <h3 className="text-[10px] font-bold text-zinc-400 uppercase">
                 <div className="flex items-center gap-2">
                   <CalendarArrowDown
-                    className="w-4 h-4 shrink-0 text-zinc-400"
+                    className="h-4 w-4 shrink-0 text-yellow-500"
                     aria-hidden
                   />
                   <span>Events</span>
                 </div>
               </h3>
               <div className="flex gap-2">
-                <span className="text-[9px] text-zinc-600 bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-800">
+                <span className="rounded border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 text-[9px] text-zinc-600">
                   {eventHistory.length}
                 </span>
                 <button
                   onClick={() => setEventHistory([])}
                   className="text-zinc-500 hover:text-white"
                 >
-                  <Trash2 className="w-3 h-3" />
+                  <Trash2 className="h-3 w-3" />
                 </button>
               </div>
             </div>
 
-            <div className="flex-1 bg-[#0a0a0a] min-h-0 overflow-y-auto custom-scrollbar">
+            <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto bg-[#0a0a0a]">
               {eventHistory.length === 0 ? (
-                <div className="flex items-center justify-center h-full text-zinc-700 text-xs italic">
+                <div className="flex h-full items-center justify-center text-xs text-zinc-700 italic">
                   Waiting for events...
                 </div>
               ) : (
@@ -875,14 +939,14 @@ export default function StremioDebugTool() {
         </div>
 
         {/* RIGHT: TELEMETRY (4 Cols) */}
-        <div className="col-span-4 flex flex-col gap-4 h-full min-h-0">
+        <div className="col-span-4 flex h-full min-h-0 flex-col gap-4">
           {/* Logs (Top Half - 50%) */}
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg flex-1 flex flex-col min-h-0 overflow-hidden">
-            <div className="px-3 py-2 border-b border-zinc-800 bg-zinc-800/30 flex items-center justify-between shrink-0">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900">
+            <div className="flex shrink-0 items-center justify-between border-b border-zinc-800 bg-zinc-800/30 px-3 py-2">
               <h3 className="text-xs font-bold text-zinc-400 uppercase">
                 <div className="flex items-center gap-2">
                   <Logs
-                    className="w-4 h-4 shrink-0 text-zinc-400"
+                    className="h-4 w-4 shrink-0 text-yellow-500"
                     aria-hidden
                   />
                   <span>System Logs</span>
@@ -892,18 +956,18 @@ export default function StremioDebugTool() {
                 onClick={() => setLogs([])}
                 className="text-zinc-500 hover:text-white"
               >
-                <Trash2 className="w-3 h-3" />
+                <Trash2 className="h-3 w-3" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-[#0a0a0a] font-mono text-[10px] min-h-0">
+            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto bg-[#0a0a0a] p-3 font-mono text-[10px]">
               {logs.length === 0 && (
-                <div className="text-zinc-700 text-center mt-20">
+                <div className="mt-20 text-center text-zinc-700">
                   No logs recorded
                 </div>
               )}
               {logs.map((l) => (
                 <div key={l.id} className="flex gap-2 break-all">
-                  <span className="text-zinc-600 shrink-0">
+                  <span className="shrink-0 text-zinc-600">
                     [{l.timestamp.split(" ")[0]}]
                   </span>
                   <span
@@ -919,7 +983,7 @@ export default function StremioDebugTool() {
                   >
                     {l.message}{" "}
                     {l.details ? (
-                      <span className="text-zinc-600 block ml-2 border-l border-zinc-800 pl-2 mt-1">
+                      <span className="mt-1 ml-2 block border-l border-zinc-800 pl-2 text-zinc-600">
                         {JSON.stringify(l.details).slice(0, 200)}
                       </span>
                     ) : (
@@ -932,12 +996,12 @@ export default function StremioDebugTool() {
           </div>
 
           {/* Action History (Bottom Half - 50%) */}
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg flex-1 flex flex-col min-h-0 overflow-hidden">
-            <div className="px-3 py-2 border-b border-zinc-800 bg-zinc-800/30 flex items-center justify-between shrink-0">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900">
+            <div className="flex shrink-0 items-center justify-between border-b border-zinc-800 bg-zinc-800/30 px-3 py-2">
               <h3 className="text-xs font-bold text-zinc-400 uppercase">
                 <div className="flex items-center gap-2">
                   <History
-                    className="w-4 h-4 shrink-0 text-zinc-400"
+                    className="h-4 w-4 shrink-0 text-yellow-500"
                     aria-hidden
                   />
                   <span>Dispatcher History</span>
@@ -947,33 +1011,33 @@ export default function StremioDebugTool() {
                 onClick={() => setActionHistory([])}
                 className="text-zinc-500 hover:text-white"
               >
-                <Trash2 className="w-3 h-3" />
+                <Trash2 className="h-3 w-3" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-2 space-y-1 bg-[#0a0a0a] min-h-0">
+            <div className="min-h-0 flex-1 space-y-1 overflow-y-auto bg-[#0a0a0a] p-2">
               {actionHistory.map((h) => (
                 <div
                   key={h.id}
-                  className="border border-zinc-800/50 rounded p-2 bg-zinc-900/50"
+                  className="rounded border border-zinc-800/50 bg-zinc-900/50 p-2"
                 >
-                  <div className="flex justify-between items-center mb-1">
+                  <div className="mb-1 flex items-center justify-between">
                     <span className="text-[10px] text-zinc-500">
                       {h.timestamp}
                     </span>
                     <span
-                      className={`text-[9px] px-1.5 rounded uppercase font-bold ${h.status === "success" ? "bg-green-900/30 text-green-500" : "bg-red-900/30 text-red-500"}`}
+                      className={`rounded px-1.5 text-[9px] font-bold uppercase ${h.status === "success" ? "bg-green-900/30 text-green-500" : "bg-red-900/30 text-red-500"}`}
                     >
                       {h.status}
                     </span>
                   </div>
-                  <div className="text-[10px] font-mono text-purple-300">
+                  <div className="font-mono text-[10px] text-purple-300">
                     {h.action}
                   </div>
-                  <div className="text-[9px] text-zinc-500 text-right mt-1">
+                  <div className="mt-1 text-right text-[9px] text-zinc-500">
                     {h.model}
                   </div>
                   {h.error && (
-                    <div className="text-[9px] text-red-400 mt-1 border-t border-red-900/30 pt-1">
+                    <div className="mt-1 border-t border-red-900/30 pt-1 text-[9px] text-red-400">
                       {h.error}
                     </div>
                   )}

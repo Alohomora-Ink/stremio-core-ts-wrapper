@@ -1,7 +1,9 @@
-import { useEffect } from "react";
-import { useQuery, useQueryClient, UseQueryOptions } from "@tanstack/react-query";
-import { useStremioCore } from "./use-stremio-core";
-import { coreKeys } from "../queries/keys";
+import { useEffect } from 'react';
+
+import { useQuery, useQueryClient, UseQueryOptions } from '@tanstack/react-query';
+
+import { coreKeys } from '../queries/keys';
+import { useStremioCore } from './use-stremio-core';
 
 export function useCoreQuery<T>(
     modelName: string,
@@ -21,12 +23,7 @@ export function useCoreQuery<T>(
 
             try {
                 const raw = await transport.getState(modelName);
-                console.log(`[useCoreQuery] Raw data for ${modelName}:`, raw);
-
-                const parsed = parser(raw);
-                console.log(`[useCoreQuery] Parsed data for ${modelName}:`, parsed);
-
-                return parsed;
+                return parser(raw);
             } catch (e) {
                 console.error(`[useCoreQuery] Error fetching ${modelName}:`, e);
                 throw e;
@@ -52,7 +49,7 @@ export function useCoreQuery<T>(
             }
 
             if (changedModels.includes(modelName) || changedModels.includes("ctx")) {
-                console.log(`[useCoreQuery] Invalidate ${modelName} due to NewState:`, changedModels);
+                console.log(`[useCoreQuery] Invalidate ${modelName} due to NewState`);
                 queryClient.invalidateQueries({ queryKey });
             }
         };
@@ -65,13 +62,16 @@ export function useCoreQuery<T>(
     }, [transport, modelName, queryClient, queryKey]);
 
     useEffect(() => {
+        if (!transport) return; // <--- Don't complain about undefined data during init
+
         if (queryResult.error) {
             console.error(`[useCoreQuery] Query Error (${modelName}):`, queryResult.error);
         }
-        if (queryResult.data === undefined && !queryResult.isLoading) {
+        // Only warn if we have transport, we are not loading, and data is still missing
+        if (queryResult.data === undefined && !queryResult.isLoading && queryResult.fetchStatus !== 'idle') {
             console.warn(`[useCoreQuery] Query returned undefined data for ${modelName}`);
         }
-    }, [queryResult.data, queryResult.error, queryResult.isLoading, modelName]);
+    }, [queryResult.data, queryResult.error, queryResult.isLoading, queryResult.fetchStatus, modelName, transport]);
 
     return queryResult;
 }

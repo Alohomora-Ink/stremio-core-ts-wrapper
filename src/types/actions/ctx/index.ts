@@ -1,5 +1,5 @@
-import type { AddonDescriptor } from "../../common/addon";
-import type { MetaItem } from "../../common/meta-item";
+import type { AddonDescriptor } from "../../models/addon";
+import type { MetaItem } from "../../models/meta-item";
 import type { AuthRequest } from "./auth";
 import type { ProfileSettings } from "./settings";
 

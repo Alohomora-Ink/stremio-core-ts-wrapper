@@ -2,7 +2,7 @@ import { useCoreQuery } from "./use-core-model";
 import { useDispatch } from "./use-dispatch";
 import { StateParser } from "../core/state-parser";
 import { ActionBuilder } from "../core/action-builder";
-import type { MetaItem } from "../types/common/meta-item";
+import type { MetaItem } from "../types/models/meta-item";
 
 export function useLibrary() {
     const { data, isLoading, error } = useCoreQuery("library", StateParser.parseLibrary);

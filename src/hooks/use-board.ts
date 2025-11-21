@@ -1,21 +1,50 @@
-import { useCoreQuery } from "./use-core-model"; // Note the new import
+import { useCallback, useState, useEffect } from "react";
+import { useCoreQuery } from "./use-core-model";
 import { useDispatch } from "./use-dispatch";
 import { StateParser } from "../core/state-parser";
 import { ActionBuilder } from "../core/action-builder";
-import { useCallback } from "react";
+import { useStremioCore } from "./use-stremio-core";
 
 export function useBoard() {
-    const { data, isLoading, error } = useCoreQuery("board", StateParser.parseBoard);
+    const { transport } = useStremioCore();
+    const { data, isLoading: isQueryLoading, error } = useCoreQuery("board", StateParser.parseBoard);
     const dispatch = useDispatch();
+    const [isSyncing, setIsSyncing] = useState(false);
+
+    useEffect(() => {
+        if (!transport) return;
+
+        const handleNewState = (args: any) => {
+            const changedModels = Array.isArray(args)
+                ? args.map(m => typeof m === 'string' ? m : m.model)
+                : [args?.model];
+
+            if (changedModels.includes("board")) {
+                setIsSyncing(false);
+            }
+        };
+
+        transport.events.on("NewState", handleNewState);
+
+        return () => {
+            transport.events.off("NewState", handleNewState);
+        };
+    }, [transport]);
 
     const loadBoard = useCallback(async () => {
-        await dispatch(ActionBuilder.Load.board([]), "board");
+        setIsSyncing(true);
+        try {
+            await dispatch(ActionBuilder.Load.board([]), "board");
+        } catch (e) {
+            console.error("Failed to load board", e);
+            setIsSyncing(false);
+        }
     }, [dispatch]);
 
     return {
         catalogs: data?.catalogs || [],
         selected: data?.selected,
-        isLoading,
+        isLoading: isQueryLoading || isSyncing,
         error,
         loadBoard
     };

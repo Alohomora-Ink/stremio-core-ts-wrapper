@@ -1,4 +1,4 @@
-import type { AddonDescriptor } from "../common/addon";
+import type { AddonDescriptor } from "./addon";
 
 export interface UserProfile {
     _id: string;
@@ -11,7 +11,6 @@ export interface UserProfile {
         marketing: boolean;
         from: string;
     };
-    // TODO: uth token is handled internally by Core, but sometimes exposed here
     token?: string;
 }
 

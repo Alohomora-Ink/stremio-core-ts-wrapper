@@ -1,5 +1,5 @@
-import type { MetaItem } from "../common/meta-item";
-import type { AddonDescriptor } from "../common/addon";
+import type { MetaItem } from "./meta-item";
+import type { AddonDescriptor } from "./addon";
 
 export interface Catalog {
     type: string; // "movie", "series"

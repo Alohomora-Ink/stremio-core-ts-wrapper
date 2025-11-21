@@ -27,9 +27,8 @@ export interface LibraryItem {
     };
 }
 
-// The structure returned by get_state('library')
 export interface LibraryState {
-    items: Record<string, LibraryItem>; // ID -> Item mapping
-    // Core often returns these lists for sorting
+    items: Record<string, LibraryItem>;
+    // Core  returns these lists for sorting?
     sorted?: string[];
 }

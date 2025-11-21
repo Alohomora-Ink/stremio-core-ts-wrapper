@@ -1,390 +1,414 @@
 # stremio-core-ts-wrapper
 
-_A strongly-typed TypeScript wrapper around the Stremio Core WebAssembly module._
+**A comprehensive, strongly-typed TypeScript abstraction layer over `@stremio/stremio-core-web`.**
 
-## Goal
+This library serves as the bridge between a React/Next.js frontend and Stremio's Rust-based core logic (compiled to WebAssembly). It provides a type-safe contract for state management, action dispatching, event handling, and addon data retrieval, implementing the "Elm Architecture" pattern adapted for modern React applications.
 
-The goal of this repository is to provides clean and well documented TypeScript layer on top of `@stremio/stremio-core-web` (the Rust → WASM bridge used by Stremio's web UI).
+## Table of Contents
 
-Why?
-
-- Provide explicit TypeScript types for Stremio Core models and actions.
-- Centralize action construction (ActionBuilder) so dispatches are type-safe and easy to test.
-- Offer robust parsers that validate and normalize raw WASM state into safe, predictable shapes.
-- Expose ergonomic React hooks (TanStack Query) for reading core state and dispatching actions.
-- Ship helper utilities (AddonClient) that fetch addon data over HTTP.
-
-This wrapper is designed to be integrated into the Custom web UI so UI authors can focus on UX while relying a type checked contract with core logic.
+1. [System Architecture](#system-architecture)
+2. [Key Concepts](#key-concepts)
+3. [Installation & Setup](#installation--setup)
+4. [Quick Start](#quick-start)
+5. [Core Systems Deep Dive](#core-systems-deep-dive)
+   - [Core Transport & WASM](#core-transport--wasm)
+   - [State Management (TanStack Query)](#state-management-tanstack-query)
+   - [Action System (ActionBuilder)](#action-system-actionbuilder)
+   - [Event System](#event-system)
+   - [Data Fetching (AddonClient)](#data-fetching-addonclient)
+6. [Developer Tools](#developer-tools)
+7. [Project Structure](#project-structure)
+8. [Documentation Links](#documentation-links)
 
 ---
 
-## What are `stremio-core` and `stremio-core-web`?
+## System Architecture
 
-- \*\*stremio-core : rust crate that's designed to contain all the reusable logic (types, addon system, UI models, core logic) between Stremio versions
-- **stremio-core-web** : The bridge package that compiles Stremio Core (Rust) into a WebAssembly module and provides a minimal JavaScript interface. It exposes `dispatch(actionString)` and `get_state(modelName)` which this wrapper encapsulates with TypeScript types, parsers, and hooks.
-
-(Official repositories are listed in the References section at the end of this README.)
-
-## Wrapper Architecture (Elm-inspired) Diagram
+The wrapper implements a unidirectional data flow. The frontend never modifies state directly; it dispatches actions to the Core, which processes them and emits new state events.
 
 ```mermaid
-graph TB
-    subgraph "React UI Layer"
-        A[Board Page Component]
-        B[Library Page Component]
-        C[Detail Page Component]
-        D[Player Component]
+flowchart TD
+    classDef frontend fill:#eef2ff,stroke:#4f46e5,stroke-width:2px,color:#1e1b4b,rx:5,ry:5
+    classDef hook fill:#c7d2fe,stroke:#4338ca,stroke-width:1px,color:#1e1b4b,rx:5,ry:5
+    classDef provider fill:#f5f3ff,stroke:#7c3aed,stroke-width:2px,color:#1e1b4b,rx:5,ry:5
+    classDef wrapperLogic fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#064e3b,rx:5,ry:5
+    classDef transport fill:#fffbeb,stroke:#d97706,stroke-width:2px,color:#78350f,rx:5,ry:5
+    classDef storage fill:#eff6ff,stroke:#2563eb,stroke-width:2px,color:#1e3a8a,stroke-dasharray: 3 3
+    classDef wasm fill:#fef2f2,stroke:#dc2626,stroke-width:3px,color:#7f1d1d,rx:5,ry:5
+    classDef external fill:#f3f4f6,stroke:#4b5563,stroke-width:1px,stroke-dasharray: 5 5,color:#1f2937
+    subgraph UI_Layer ["Frontend Application Layer (Next.js)"]
+        direction TB
+        Components["React Components<br/>(Board, Library, Detail, Player)"]:::frontend
+        DebugCenter["StremioCoreWebDebugCenter<br/>(Developer Tools)"]:::frontend
     end
+    subgraph React_Integration ["Wrapper React Integration Layer"]
+        direction TB
 
-    subgraph "Custom Hooks Layer"
-        E[useCtxState]
-        F[useLibrary]
-        G[useAuth]
-        H[useLibraryActions]
-        I[useAddonActions]
+        subgraph Providers ["Context Providers"]
+            CoreProvider["StremioCoreProvider<br/>(WASM Lifecycle, Global Events, Proxy Enforcement)"]:::provider
+        end
+
+        subgraph Hooks_Public ["Domain Hooks (Public API)"]
+            direction LR
+            useCtx["useCtx()<br/>(Profile, Settings, Addons)"]:::hook
+            useBoard["useBoard()<br/>(Catalogs, Recs)"]:::hook
+            useLibrary["useLibrary()<br/>(Items, History)"]:::hook
+            useAuth["useAuthActions()<br/>(Login, Register)"]:::hook
+        end
+
+        subgraph Hooks_Internal ["Core Infrastructure Hooks"]
+            direction LR
+            useDispatch["useDispatch()<br/>(Action Dispatcher)"]:::hook
+            useCoreQuery["useCoreQuery()<br/>(TanStack Query Wrapper)"]:::hook
+        end
     end
+    subgraph Wrapper_Logic ["Wrapper Logic Layer"]
+        direction TB
 
-    subgraph "TanStack Query"
-        J[Query Cache]
-        K[Query Client]
+        ActionBuilder["ActionBuilder (Static Class)<br/>Constructs Type-Safe JSON Actions"]:::wrapperLogic
+
+        StateParser["StateParser (Static Class)<br/>Validates & Transforms Raw JSON -> Typed TS Objects"]:::wrapperLogic
+
+        AddonClient["AddonClient (Static Class)<br/>HTTP Fetcher for Catalog Content"]:::wrapperLogic
     end
+    subgraph Transport_Layer ["Transport & State Management"]
+        direction TB
 
-    subgraph "Stremio Core Wrapper"
-        L[ActionBuilder]
-        M[StateParser]
-        N[AddonClient]
+        QueryCache[("TanStack Query Cache<br/>(In-Memory State Store)")]:::storage
+
+        CoreTransport["CoreTransport Class<br/>(Worker Manager & Bridge Wrapper)"]:::transport
+
+        EventEmitter["EventEmitter<br/>(Events: 'NewState', 'CoreEvent')"]:::transport
     end
-
-    subgraph "Stremio Core WASM"
-        O[Core Instance]
-        P[dispatch method]
-        Q[get_state method]
+    subgraph WASM_Kernel ["@stremio/stremio-core-web (Submodule)"]
+        direction TB
+        Bridge["Bridge (JS <-> WASM Interface)"]:::wasm
+        WebWorker["Web Worker (worker.js)"]:::wasm
+        RustCore["Rust Core Logic<br/>(The 'Brain' - Holds Source of Truth)"]:::wasm
     end
-
-    subgraph "External APIs"
-        R[Cinemeta Addon]
-        S[Other Addons]
-        T[Stremio API]
+    subgraph External_World ["External Infrastructure"]
+        direction LR
+        AddonAPIs["External Addon APIs<br/>(Cinemeta, etc.)"]:::external
+        ProxyAPI["Next.js Proxy Route<br/>(/api/proxy)"]:::external
+        StreamingServer["Local Streaming Server<br/>(127.0.0.1:11470)"]:::external
     end
+    CoreProvider --"1. new CoreTransport()"--> CoreTransport
+    CoreTransport --"2. Spawn Worker"--> WebWorker
+    WebWorker --"3. Init Success"--> CoreTransport
+    CoreProvider --"4. Dispatch Init Actions"--> useDispatch
+    Components -->|Subscribe| Hooks_Public
+    Hooks_Public -->|Derive State| useCoreQuery
+    useCoreQuery -->|Read| QueryCache
+    useCoreQuery --"On Cache Miss"--> CoreTransport
+    CoreTransport --"getState(model)"--> Bridge
+    Bridge --> WebWorker
+    WebWorker --"Raw JSON State"--> Bridge
+    Bridge --> CoreTransport
+    CoreTransport --"Raw State"--> StateParser
+    StateParser --"Typed Model"--> useCoreQuery
+    useCoreQuery --"Update Cache"--> QueryCache
+    Components -->|Trigger| useAuth
+    Components -->|Trigger| useDispatch
+    useAuth --> useDispatch
 
-    A --> E
-    A --> F
-    B --> F
-    B --> H
-    C --> N
-    D --> H
-
-    E --> J
-    F --> J
-    G --> J
-
-    H --> L
-    H --> K
-    I --> L
-    I --> K
-
-    L --> P
-    M --> Q
-    E --> M
-    F --> M
-
-    P --> O
-    Q --> O
-
-    N --> R
-    N --> S
-
-    K -.Invalidate.-> J
-
-    style O fill:#ff6b6b
-    style L fill:#4ecdc4,color:#000000
-    style M fill:#4ecdc4,color:#000000
-    style N fill:#45b7d1,color:#000000
-    style J fill:#96ceb4,color:#000000
-    style K fill:#96ceb4,color:#000000
+    useDispatch --"1. Get Action JSON"--> ActionBuilder
+    useDispatch --"2. dispatch(action, model)"--> CoreTransport
+    CoreTransport --> Bridge
+    Bridge --> WebWorker
+    WebWorker -->|Process Action| RustCore
+    RustCore --"State Modified"--> WebWorker
+    WebWorker --"Emit 'NewState'"--> Bridge
+    Bridge --> EventEmitter
+    EventEmitter --"Broadcast ['model_name']"--> useCoreQuery
+    useCoreQuery --"Invalidate Query Key"--> QueryCache
+    QueryCache --"Trigger Refetch"--> useCoreQuery
+    Components -.->|Request Catalog Content| AddonClient
+    AddonClient -->|1. Direct Fetch| AddonAPIs
+    AddonClient -->|2. Fallback CORS | ProxyAPI
+    ProxyAPI --> AddonAPIs
+    DebugCenter -.->|Inspect Transport| CoreTransport
+    DebugCenter -.->|Listen to Events| EventEmitter
+    DebugCenter -.->|Dispatch Raw JSON| CoreTransport
+    EventEmitter --"UserAuthenticated"--> CoreProvider
+    CoreProvider --"Enforce Proxy Settings"--> useDispatch
+    useCtx --> StateParser
+    useBoard --> StateParser
+    useLibrary --> StateParser
+    useAuth --> ActionBuilder
 ```
-
-## Wrapper — Progress & Roadmap Checklist (v0)
-
-> This section is mean to be updated regularly, he one will find a a concise, hierarchical checklist that shows what has been completed, what’s planned, and where the relevant code and tasks live.
 
 ---
 
-### Phase 1: Foundation Setup ✅ (Already Done!)
+## Key Concepts
 
-- [x] Repository layout established (`/src`, `/docs`).
-  - Relevant files: `./src/index.ts`, `./docs/`.
-  - See: `./docs/StremioCoreTypeScriptWrapperArchitecture.md`.
-- [x] WASM initialization provider and runtime wiring.
-  - Done in: `./src/index.ts` and `./src/core/*`.
-  - Inspect: `./src/core/state-parser.ts` (reads `core.get_state`) and `./src/core/action-builder.ts` (constructs actions).
-- [x] Addon HTTP client implemented.
-  - File: `./src/api/addon-client.ts`.
-- [x] Base common types added.
-  - Files: `./src/types/common/addon.ts`, `./src/types/common/meta-item.ts`, `./src/types/common/stream.ts`.
-- [x] Core hooks exposed for consumers.
-  - Files: `./src/hooks/use-core-state.ts`, `./src/hooks/use-dispatch.ts`.
-- [x] Fetch catalog data via HTTP
+### 1. The "Elm Architecture" in React
 
-### Phase 2: Type System & Core Wrapper
+Stremio Core follows the Elm architecture: **Model**, **View**, and **Update**.
 
-> Goal: provide type-safe models, action builders, and parsers so UI code can be predictable and unit-testable.
+- **Model**: Held entirely within the Rust Core.
+- **View**: The React Frontend (derived from Core state).
+- **Update**: Triggered strictly via Actions dispatched to Core.
 
-#### 2.1 Types & models
+### 2. Strict Type Safety
 
-- [x] Core model `ctx` added.
-  - File: `./src/types/models/ctx.ts`.
-- [ ] Additional model files planned (library, board, discover, player, detail).
-  - Planned files (not yet present):
-    - `./src/types/models/library.ts` — **Pending**. Issue: [#TODO-library](https://github.com/)
-    - `./src/types/models/board.ts` — **Pending**. Issue: [#TODO-board](https://github.com/)
+Raw WASM data is unstructured JSON. This wrapper enforces strict TypeScript interfaces for all:
 
-**Plan:**
+- **Models**: `CtxState`, `BoardState`, `LibraryItem`, `MetaItem`, etc.
+- **Actions**: `ActionCtx`, `ActionLoad`, `ActionPlayer`.
+- **Parsers**: `StateParser` validates and transforms raw data into safe TS objects before the UI sees them.
 
-- Implement one model at a time; for each model:
-  - Create TypeScript shape in `./src/types/models`.
-  - Export it via `./src/types/index.ts` (or `./src/types/stremio-core.d.ts` if needed).
+### 3. React Integration via TanStack Query
 
-#### 2.2 Actions & ActionBuilder
+State synchronization is handled via custom hooks (`useCoreQuery`) that leverage TanStack Query. This provides:
 
-- [x] Base action types exist (ctx-actions, load-actions).
-  - Files: `./src/types/actions/ctx-actions.ts`, `./src/types/actions/load-actions.ts`, `./src/types/actions/index.ts`.
-- [x] ActionBuilder core implemented.
-  - File: `./src/core/action-builder.ts`.
-- [ ] Add strongly-typed builders for new models (per-model).
-  - Example to add for `library`:
+- Automatic cache invalidation based on Core events.
+- Deduplicated state reads.
+- Memory management for expensive state objects.
 
-```ts
-// src/core/action-builder.ts (snippet)
-static addToLibrary(item: LibraryItem): string {
-  return JSON.stringify({ type: 'AddToLibrary', payload: item });
+### 4. Hybrid Data Fetching
+
+While "User State" (Library, Settings, Auth) lives in Core/WASM, "Catalog Content" (Movies, Series) is often fetched directly via HTTP to reduce WASM overhead. The wrapper provides `AddonClient` for this purpose.
+
+---
+
+## Installation & Setup
+
+This wrapper is designed to be used as a Git submodule or internal package within a monorepo.
+
+### Prerequisites
+
+1. **Stremio Core Web**: The project depends on `@stremio/stremio-core-web`.
+2. **Worker Setup**: The `worker.js` file from `@stremio/stremio-core-web` must be copied to the public directory of the host application (e.g., `public/worker.js`).
+
+### Provider Setup
+
+Wrap the application root with `StremioCoreProvider`. This handles the WASM initialization lifecycle.
+
+```tsx
+// src/app/layout.tsx
+import { StremioCoreProvider } from "@/stremio-core-ts-wrapper/src/providers/StremioCoreProvider";
+
+export default function RootLayout({ children }) {
+  return <StremioCoreProvider>{children}</StremioCoreProvider>;
 }
 ```
 
-Issue placeholder: [#TODO-actions](https://github.com/)
+---
 
-#### 2.3 StateParser
+## Quick Start
 
-- [x] Parser scaffolding present.
-  - File: `./src/core/state-parser.ts`.
-- [ ] Add parse methods per model (e.g., `parseLibrary`, `parseBoard`).
-  - Plan: add Zod schemas or equivalent runtime checks for each model.
+### 1. Reading State
 
-**How we will do it:**
+Use specific hooks to read data. The hooks handle parsing and error states.
 
-1. Write a Zod schema in `./src/core/schemas/library.schema.ts`.
-2. Implement `StateParser.parseLibrary(raw)` which returns `LibraryModel`.
-3. Add unit tests in `./test` verifying raw → typed conversion.
+```tsx
+import { useCtx, useBoard } from "@/stremio-core-ts-wrapper";
+
+function Dashboard() {
+  // Access Global Context (Profile, Addons, Settings)
+  const { profile, isAuthenticated, addons, isLoading } = useCtx();
+
+  // Access Board (Catalogs, Recommendations)
+  const { catalogs } = useBoard();
+
+  if (isLoading) return <div>Loading Core...</div>;
+
+  return (
+    <div>
+      <h1>Hello, {isAuthenticated ? profile.email : "Guest"}</h1>
+      <div>Installed Addons: {addons.length}</div>
+    </div>
+  );
+}
+```
+
+### 2. Dispatching Actions
+
+Use `useDispatch` combined with `ActionBuilder` to modify state.
+
+```tsx
+import { useDispatch, ActionBuilder } from "@/stremio-core-ts-wrapper";
+
+function LoginButton() {
+  const dispatch = useDispatch();
+
+  const handleLogin = async () => {
+    // 1. Construct the Type-Safe Action
+    const action = ActionBuilder.Auth.login("user@example.com", "password123");
+
+    // 2. Dispatch to the specific model ("ctx")
+    try {
+      await dispatch(action, "ctx");
+    } catch (e) {
+      console.error("Login failed", e);
+    }
+  };
+
+  return <button onClick={handleLogin}>Login</button>;
+}
+```
 
 ---
 
-### Phase 3: Add More Models (Do These in Order)
+## Core Systems Deep Dive
 
-> Prioritized list of models to implement, with per-model subchecklists and paths.
+### Core Transport & WASM
 
-#### 3.1 Library (priority: high)
+**File:** `src/core/core-transport.ts`
 
-- [ ] Files
-  - `./src/types/models/library.ts`
-  - `./src/types/actions/library-actions.ts`
-  - `./src/core/schemas/library.schema.ts`
-  - `./src/hooks/use-library-state.ts` (query hook)
-  - `./src/hooks/use-library-actions.ts` (dispatch helpers)
-- [ ] Checklist
-  - [ ] Define TypeScript types and JSDoc.
-  - [ ] Implement ActionBuilder methods (add/remove/update progress).
-  - [ ] Add `StateParser.parseLibrary` and unit tests.
-  - [ ] Implement hooks and wire to components.
-  - [ ] Manual QA and PR.
+The `CoreTransport` class is the low-level singleton that manages the Web Worker. It initializes the WASM bridge using `@stremio/stremio-core-web/bridge`.
 
-**What it does:**
+- **Initialization**: Loads `worker.js` and calls the internal `init` endpoint.
+- **Event Loop**: Exposes an `EventEmitter` that broadcasts messages from Rust to the UI.
+- **Methods**:
+  - `dispatch(action, model)`: Sends a JSON string to Core.
+  - `getState(model)`: Synchronously retrieves a snapshot of a specific model.
+  - `decodeStream(stream)`: Analytics and stream resolution helpers.
 
-- Manages user's content library
-- Track watch progress
-- Continue watching
+### State Management (TanStack Query)
 
-**When to use:**
+**File:** `src/hooks/use-core-model.ts`
 
-- Library page
-- Continue watching section
-- Watch history
-- Issue: [#feature-library](https://github.com/)
+The wrapper uses a sophisticated caching strategy to keep the UI in sync with WASM without over-fetching.
 
-#### 3.2 Board (priority: medium)
+1. **Event Listening**: The `useCoreQuery` hook subscribes to `NewState` events emitted by `CoreTransport`.
+2. **Selective Invalidation**: When `NewState` fires, the event payload contains a list of changed models (e.g., `['ctx', 'library']`).
+3. **Refetching**: If the hook is observing a model that changed, it triggers a `queryClient.invalidateQueries`.
+4. **Parsing**: The fresh raw state is passed through `StateParser` before being returned to the component.
 
-- [ ] Files
-  - `./src/types/models/board.ts`
-  - `./src/hooks/use-board-state.ts`
-- [ ] Checklist
-  - [ ] Types
-  - [ ] Parser
-  - [ ] Hook & UI wiring
+**Example Pattern:**
 
-**What it does:**
+```typescript
+// Inside use-core-model.ts
+transport.events.on("NewState", (changedModels) => {
+  if (changedModels.includes(modelName)) {
+    queryClient.invalidateQueries({ queryKey: ["stremio-core", modelName] });
+  }
+});
+```
 
-- Provides curated content for the board
-- Combines library with recommendations
+### Action System (ActionBuilder)
 
-**When to use:**
+**File:** `src/core/action-builder.ts`
 
-- Board page (home page)
-- Personalized recommendations
-- Issue: [#feature-board](https://github.com/)
+Stremio Core expects actions as JSON strings representing Rust Enums. Manually constructing these strings is error-prone. `ActionBuilder` provides static methods for every supported action.
 
-#### 3.3 Discover (priority: medium)
+**Categories:**
 
-- [ ] Files
-  - `./src/types/models/discover.ts`
-  - `./src/types/actions/discover-actions.ts`
-- [ ] Checklist
-  - [ ] Types + actions
-  - [ ] Parser + hooks
-  - [ ] Search & filter helpers
+- **Auth**: Login, Register, Logout.
+- **User**: PullUser, SyncLibrary, UpdateSettings.
+- **Library**: AddItem, RemoveItem, ToggleNotifications.
+- **Load**: Navigation actions (Load Board, Load Library, Load Player).
+- **Player**: TimeChanged, Ended, Paused, Playing.
 
-**What it does:**
+**Example:**
 
-- Browse catalogs by genre
-- Filter by type (movie, series)
-- Search functionality
+```typescript
+// Instead of manual JSON:
+// '{"action":"Ctx","args":{"action":"AddToLibrary","args":{...}}}'
 
-**When to use:**
+// Use ActionBuilder:
+ActionBuilder.Library.addItem(metaItem);
+```
 
-- Discover page
-- Genre browsing
-- Advanced filtering
-- Issue: [#feature-discover](https://github.com/)
+### Event System
 
-#### 3.4 Detail (priority: medium/high)
+**File:** `src/core/core-transport.ts`
 
-- [ ] Files
-  - `./src/types/models/detail.ts`
-- [ ] Checklist
-  - [ ] Types for episodes, seasons, streams
-  - [ ] Types for episodes, seasons, streams
-  - [ ] Types for episodes, seasons, streams
+The Core emits two primary types of events:
 
-**What it does:**
+1. **`NewState`**: Indicates data has changed. Payload contains the names of modified models. Used primarily for cache invalidation.
+2. **`CoreEvent`**: One-off occurrences (e.g., `UserAuthenticated`, `Error`, `AddonInstalled`). These are often used for UI side effects like redirects or toasts.
 
-- Detailed metadata for specific content
-- Episode/season information for series
-- Related content
+The `StremioCoreProvider` listens to `CoreEvent` to handle critical application lifecycle changes, such as enforcing proxy settings upon authentication.
 
-**When to use:**
+### Data Fetching (AddonClient)
 
-- Detail pages
-- Video player metadata
-- Episode selection
-- Issue: [#feature-player-detail](https://github.com/)
+**File:** `src/api/addons/addon-client.ts`
 
-#### 3.5 Player (priority: medium/high)
+Not all data comes from WASM. Catalog content and metadata are often fetched directly from Addons via HTTP. The `AddonClient` handles this with a robustness layer:
 
-- [ ] Files
-  - `./src/types/models/player.ts`
-  - `./src/types/actions/player-actions.ts`
-- [ ] Checklist
-  - [ ] Stream Detials parser
-  - [ ] Player state parser
-  - [ ] Playback hooks & action builders
-
-**What it does:**
-
-- Video playback state
-- Subtitle management
-- Audio track selection
-- Playback progress tracking
-
-**When to use:**
-
-- Video player component
-- Progress tracking
-- Playback controls
-- Issue: [#feature-player-detail](https://github.com/)
+- **Normalization**: Converts `stremio://` protocols to `https://`.
+- **Smart Fetch**:
+  1. Attempts a direct browser `fetch`.
+  2. If CORS fails or the request errors, falls back to a local proxy (`/api/proxy`).
+- **Parsing**: Uses `AddonParser` to validate responses against `MetaItem` and `Stream` interfaces.
 
 ---
 
-### Phase 4: Extra features and extendability
+## Developer Tools
 
-> Long-term enhancements that improve observability, integrations, and developer ergonomics.
+### StremioCoreWebDebugCenter
 
-#### 4.1 Notifications
+**File:** `src/debug/components/StremioCoreWebDebugCenter.tsx`
 
-- [ ] Model & actions for user notifications.
-  - Paths: `./src/types/models/notifications.ts`, `./src/hooks/use-notifications.ts`.
-- [ ] Server-side event handling for addon updates.
+The wrapper includes a powerful visual debugger that can be toggled in the application layout.
 
-- Issue: [#feature-notifications](https://github.com/)
+**Features:**
 
-**What it does:**
+- **State Inspector**: Live JSON tree view of any Core model (`ctx`, `board`, `player`, etc.) with copy functionality.
+- **Event Log**: Real-time feed of `NewState` and `CoreEvent` emissions.
+- **Action Dispatcher**: UI for firing common actions (Login, Load Board) or raw custom JSON actions.
+- **System Logs**: Internal logs from the `CoreTransport` and `AddonClient`.
+- **Simulation**: Tools to simulate Auth login or Stream decoding without using the actual UI.
 
-- New episode notifications
-- Library updates
-- Addon updates
+To enable:
 
-#### 4.2 Streaming server & local infra
+```tsx
+// src/app/layout.tsx
+const ENABLE_DEBUG = true;
 
-- [ ] Integrations for local streaming / torrent health checks.
-  - API client: `./src/api/streaming-server-client.ts` (planned).
-
-- Issue: [#feature-streaming-server](https://github.com/)
-
-**What it does:**
-
-- Local streaming server management
-- Torrent health checking
-- Download management
-
-#### 4.3 Calendar
-
-- [ ] Integrations for fetching updates for media user has subscribed to
-  - - Paths: `./src/hooks/use-callenar.ts` (planned).
-
-- Issue: [#feature-streaming-server](https://github.com/)
-
-#### 4.3 Developer DX & tooling
-
-- [ ] Add Zod schemas and automatic runtime validation for addon responses.
-- [ ] Add unit/integration CI pipelines:
-  - Test: `npm test` (unit + parser tests)
-  - Build: `npm run build` (TypeScript + wasm packaging)
-- [ ] Documentation improvements (examples per-model in `./docs/features/`).
-
-- Issue: [#task-dx-ci](https://github.com/)
+return (
+  <WebViewProvider>
+    {ENABLE_DEBUG ? (
+      <StremioCoreWebDebugCenter />
+    ) : (
+      <AppShell>{children}</AppShell>
+    )}
+  </WebViewProvider>
+);
+```
 
 ---
 
-## Debugging Tips & Patterns
+## Project Structure
 
-- Inspect raw state with `core.get_state("ctx")` and parse with `StateParser`.
-- Always `JSON.stringify(...)` actions before `core.dispatch()`.
-- Prefer HTTP for addon data — use `src/api/addon-client.ts`.
-- Use TanStack Query selective invalidation for minimal re-fetch.
-- Add dev-only quick-inspect hooks (expose `window.__STREMIO_CORE__`) in provider.
-
-## Testing Strategy
-
-- Unit tests for ActionBuilder and StateParser.
-- Integration tests for dispatch → state changes.
-- Runtime validation of addon responses using Zod (recommended).
-
-## Contribution & PR guide
-
-1. Branch from `main` using a descriptive name: `feature/<model>-<short-desc>`.
-2. Add types, action builders, parsers, hooks, and minimal components.
-3. Add unit tests for parser and action builder.
-4. Update `docs/` if the feature changes dev workflow.
-5. Open PR with:
-   - Summary of the feature
-   - Files changed and rationale
-   - Test plan and manual QA steps
-   - Screenshots (if UI changes)
+```tree
+src/stremio-core-ts-wrapper/
+├── README.md                   # This file
+├── docs/                       # Detailed documentation
+├── src/
+│   ├── api/
+│   │   └── addons/             # Addon HTTP Client & Parsers
+│   ├── core/
+│   │   ├── action-builder.ts   # Action Factory
+│   │   ├── core-transport.ts   # WASM Worker Bridge
+│   │   └── state-parser.ts     # Raw State -> Typed Object Parsers
+│   ├── debug/                  # Debugging Components
+│   ├── hooks/
+│   │   ├── use-core-model.ts   # Base TanStack Query Hook
+│   │   ├── use-dispatch.ts     # Action Dispatcher Hook
+│   │   └── ...                 # Domain Hooks (useCtx, useBoard)
+│   ├── providers/              # Context Providers
+│   └── types/                  # TypeScript Definitions
+│       ├── actions/            # Action Interfaces
+│       └── models/             # State Model Interfaces
+```
 
 ---
 
-## References & further reading
+## Documentation Links
 
-- `docs/implementation-checklist.md` (canonical checklist).
-- `docs/StremioCoreTypeScriptWrapperArchitecture.md` (architecture and patterns).
-- `docs/add_new_feature_workflow_template.md` (feature template for `/docs` — keep with each feature).
-- `docs/architecture-diagram.mermaid` (visual architecture diagram).
+For deeper implementation details, refer to the `docs/` directory:
 
----
+1. **[Architecture Guide](docs/StremioCoreTypeScriptWrapperArchitecture.md)**
+   Detailed breakdown of the "Elm" pattern, type system, and react integration strategies.
+
+2. **[Implementation Checklist](docs/implementation-checklist.md)**
+   Tracking document for implemented models, actions, and planned features.
+
+3. **[Feature Workflow](docs/add_new_feature_workflow_template.md)**
+   Step-by-step guide for contributors adding new models or actions to the wrapper.
+
+4. **[Visual Architecture](docs/architecture-diagram.mermaid)**
+   Mermaid diagram visualizing the data flow between Next.js, the Wrapper, and WASM.

@@ -2,17 +2,18 @@
   "compilerOptions": {
     "jsx": "react",
     "forceConsistentCasingInFileNames": true,
+    "esModuleInterop": true,
     "strict": true
   },
   "include": [
     "next-env.d.ts",
     "**/*.ts",
+    "../**/*.ts",
     "**/*.tsx",
     "**/*.cjs",
     "**/*.js",
     ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts",
-    "src/providers/bridge-based-provider.ts.bak"
+    ".next/dev/types/**/*.ts"
   ],
   "exclude": ["node_modules"]
 }

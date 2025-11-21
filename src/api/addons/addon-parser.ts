@@ -1,6 +1,6 @@
-import { AddonManifest } from "../../types/common/addon";
-import { MetaItem } from "../../types/common/meta-item";
-import { Stream } from "../../types/common/stream";
+import { AddonManifest } from '../../types/models/addon';
+import { MetaItem } from '../../types/models/meta-item';
+import { Stream } from '../../types/models/stream';
 
 export class AddonParser {
 
@@ -25,6 +25,7 @@ export class AddonParser {
         // We can reuse the robust MetaItem parsing logic if needed, 
         // but for now we trust the basic shape matches our interfaces
         // or map it strictly if we want to be 100% safe.
+        // TODO : Remaping
         return raw.metas;
     }
 

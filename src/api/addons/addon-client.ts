@@ -1,14 +1,15 @@
-import { AddonParser } from "./addon-parser";
-import type { AddonManifest } from "../../types/common/addon";
-import type { MetaItem } from "../../types/common/meta-item";
-import type { Stream } from "../../types/common/stream";
+import { AddonParser } from './addon-parser';
+
+import type { AddonManifest } from "../../types/models/addon";
+import type { MetaItem } from "../../types/models/meta-item";
+import type { Stream } from "../../types/models/stream";
 
 export class AddonClient {
     /**
      * Normalizes Stremio protocol URLs to HTTPS
      */
     private static normalizeUrl(url: string): string {
-        if (!url) return ""; // Prevent crash
+        if (!url) return "";
         if (url.startsWith("stremio://")) {
             return url.replace("stremio://", "https://");
         }
@@ -19,26 +20,41 @@ export class AddonClient {
     }
 
     /**
-     * Fetches the manifest.json from an addon
+     * SMART FETCH: Direct -> Next.js Proxy -> Fail
      */
+    private static async smartFetch(url: string): Promise<any> {
+        try {
+            // 1. Try Direct Fetch
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`Direct fetch failed: ${response.status}`);
+            return await response.json();
+        } catch (directError) {
+            console.warn(`[AddonClient] Direct fetch failed for ${url}, trying local proxy...`);
+
+            // 2. Try via Next.js API Proxy
+            try {
+                const proxyUrl = `/api/proxy?q=${encodeURIComponent(url)}`;
+
+                const proxyResponse = await fetch(proxyUrl);
+                if (!proxyResponse.ok) throw new Error(`Proxy fetch failed: ${proxyResponse.status}`);
+                return await proxyResponse.json();
+            } catch (proxyError) {
+                console.error(`[AddonClient] All fetch methods failed for ${url}`);
+                throw directError;
+            }
+        }
+    }
+
     static async getManifest(addonUrl: string): Promise<AddonManifest> {
         const baseUrl = this.normalizeUrl(addonUrl);
-        // Handle case where url already ends in manifest.json
         const url = baseUrl.endsWith("manifest.json")
             ? baseUrl
             : `${baseUrl.replace(/\/$/, "")}/manifest.json`;
 
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`Failed to fetch manifest: ${response.statusText}`);
-        const json = await response.json();
+        const json = await this.smartFetch(url);
         return AddonParser.parseManifest(json);
     }
 
-    /**
-     * Fetches a Catalog (List of items)
-     * Pattern: /catalog/{type}/{id}.json
-     * or: /catalog/{type}/{id}/skip={x}&genre={y}.json
-     */
     static async getCatalog(
         addonTransportUrl: string,
         type: string,
@@ -46,37 +62,23 @@ export class AddonClient {
         extra?: Record<string, string>
     ): Promise<{ metas: MetaItem[] }> {
         const baseUrl = this.normalizeUrl(addonTransportUrl).replace("/manifest.json", "");
-
-        // Construct path
         let path = `/catalog/${type}/${id}`;
 
-        // Handle extra parameters (skip, genre, search)
         if (extra && Object.keys(extra).length > 0) {
-            // Stremio addon protocol uses path-based parameters for some legacy reasons,
-            // but standard v3 is often key=value in the path component or query params.
-            // Standard V3: /catalog/movie/top/genre=Action.json
             const params = Object.entries(extra)
                 .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
                 .join("&");
-
             path += `/${params}.json`;
         } else {
             path += ".json";
         }
 
         const url = `${baseUrl}${path}`;
-
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`Failed to fetch catalog: ${response.statusText}`);
-        const json = await response.json();
+        const json = await this.smartFetch(url);
 
         return { metas: AddonParser.parseCatalogResponse(json) };
     }
 
-    /**
-     * Fetches Meta Details (Single Item)
-     * Pattern: /meta/{type}/{id}.json
-     */
     static async getMeta(
         addonTransportUrl: string,
         type: string,
@@ -84,18 +86,10 @@ export class AddonClient {
     ): Promise<{ meta: MetaItem }> {
         const baseUrl = this.normalizeUrl(addonTransportUrl).replace("/manifest.json", "");
         const url = `${baseUrl}/meta/${type}/${id}.json`;
-
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`Failed to fetch meta: ${response.statusText}`);
-        const json = await response.json();
-
+        const json = await this.smartFetch(url);
         return { meta: AddonParser.parseMetaResponse(json) };
     }
 
-    /**
-     * Fetches Streams
-     * Pattern: /stream/{type}/{id}.json
-     */
     static async getStreams(
         addonTransportUrl: string,
         type: string,
@@ -103,11 +97,7 @@ export class AddonClient {
     ): Promise<{ streams: Stream[] }> {
         const baseUrl = this.normalizeUrl(addonTransportUrl).replace("/manifest.json", "");
         const url = `${baseUrl}/stream/${type}/${id}.json`;
-
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`Failed to fetch streams: ${response.statusText}`);
-        const json = await response.json();
-
+        const json = await this.smartFetch(url);
         return { streams: AddonParser.parseStreamResponse(json) };
     }
 }

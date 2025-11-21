@@ -4,9 +4,9 @@ export { StateParser } from './core/state-parser';
 export { CoreTransport } from './core/core-transport';
 
 // Types
-export * from './types/common/meta-item';
-export * from './types/common/stream';
-export * from './types/common/addon';
+export * from './types/models/meta-item';
+export * from './types/models/stream';
+export * from './types/models/addon';
 export * from './types/models';
 export * from './types/actions';
 

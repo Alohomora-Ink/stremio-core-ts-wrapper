@@ -1,189 +1,258 @@
-# AddNewFeatureWorkflowTemplate
+# Workflow: Adding a New Feature
 
-> Template for adding a new feature / model / action to the Stremio TypeScript wrapper.
+**Purpose**: This document outlines the standardized process for implementing a new Stremio Core feature (Model, Action, or Capability) within the TypeScript wrapper.
 
----
+**Prerequisites**:
 
-## Basic metadata (fill before starting)
-
-- **Feature name:**`INPUT_FEATURE_NAME_HERE<!-- e.g., fetch data / auth / save data / etc -->`
-- **Feature type:**`INPUT_FEATURE_TYPE_HERE<!-- e.g., model / action / api / component -->`
-- **Target milestone / PR / Feature Branch:**`INPUT_MILESTONE_OR_PR_HERE<!-- e.g., current feature branch -->`
-- **High-level description:**`INPUT_SHORT_DESC_HERE<!-- e.g., describe the feature, or the type, or the action, functinality etc-->`
-- **Requirements / acceptance criteria:**
-  - `INPUT_REQUIREMENT_1<!-- e.g., criteria to validate that the feature is working -->`
-  - `INPUT_REQUIREMENT_2<!-- e.g., criteria to validate that the feature is working -->`
-  - `INPUT_REQUIREMENT_N<!-- e.g., criteria to validate that the feature is working -->`
+1. Ensure you understand the [System Architecture](./StremioCoreTypeScriptWrapperArchitecture.md).
+2. Have the [Debug Center](../src/debug/components/StremioCoreWebDebugCenter.tsx) enabled in your app to inspect raw data.
 
 ---
 
-## Mapping (how this maps into the codebase)
+## 📋 Workflow Overview
 
-- [ ]**Rust (stremio-core) reference(s):**`INPUT_RUST_FILE_OR_GIT_URL_OR_DIRECT_ORIGINAL_CODE_SNIPPIT_REF_HERE`
-
----
-
-- [ ]**TS types path:**`src/stremio-core/types/models/INPUT / src/stremio-core/types/actions/INPUT`
-
----
-
-- [ ]**ActionBuilder:**`src/stremio-core/core/action-builder.ts` (add method)
+1. **Analysis**: Inspect the raw WASM state and Rust source.
+2. **Types**: Define TypeScript interfaces for Models and Actions.
+3. **Logic**: Implement `ActionBuilder` methods and `StateParser` logic.
+4. **State**: Create a React Hook (`useCoreQuery`) with cache invalidation strategies.
+5. **UI**: Integrate into components.
 
 ---
 
-- [ ]**StateParser:**`src/stremio-core/core/state-parser.ts` (parse model)
+## 🛠️ Step-by-Step Implementation Guide
 
----
+### Phase 1: Analysis & Discovery
 
-- [ ]**Hooks:**`src/stremio-core/hooks/` (query + dispatch)
+Before writing code, understand the shape of data coming from Rust.
 
----
+1. **Locate the Feature in Rust**:
+   - Go to the [stremio-core repo](https://github.com/Stremio/stremio-core).
+   - Find the **Model** (e.g., `src/models/library_with_filters.rs`).
+   - Find the **Action** (e.g., `src/types/actions.rs`).
+2. **Inspect Raw State**:
+   - Open your app with `StremioCoreWebDebugCenter` enabled.
+   - Use the **Action Dispatcher** to manually fire the relevant `Load` action (e.g., `{"action":"Load","args":{"model":"LibraryWithFilters",...}}`).
+   - Use the **State Inspector** to view the raw JSON output.
+   - _Copy this JSON_. You will need it to write your TypeScript interfaces.
 
-- [ ]**Components / Pages:**`src/app/...` or`src/components/...`
+### Phase 2: Type Definitions (`src/types`)
 
----
+Define the contract. Do not use `any`.
 
-- [ ]**API client (if needed):**`src/stremio-core/api/` (e.g., addon-client.ts)
+**1. Create the Model Type**
+File: `src/types/models/<feature-name>.ts`
 
----
+```typescript
+// Example: src/types/models/calendar.ts
 
-## Workflow Checklist
+import type { MetaItem } from "./meta-item";
 
-### 1 — Research & discovery
+export interface CalendarEvent {
+  date: string; // ISO Date
+  items: MetaItem[];
+}
 
-- [ ] Locate the relevant Rust model/action in[stremio-Core repo](https://github.com/Stremio/stremio-core) or[stremio-core-web repo](https://github.com/Stremio/stremio-core/tree/development/stremio-core-web) (search`src/**/models/`and`src/state_types/msg/actions.rs`).
-- [ ] Inspect examples in the[official stremio-web app](https://github.com/Stremio/stremio-web) for similar functionality.
-- [ ] Find any addon HTTP endpoints needed (catalogs / metadata).
-- [ ] Note any runtime invariants or edge cases (e.g., optional fields).
-
-### 2 — Types (TypeScript)
-
-- [ ] Create model types in`src/stremio-core/types/models/INPUT_FEATURE_NAME_HERE.ts`.
-  - Add JSDoc comments and indicate which fields are optional.
-- [ ] Add any shared/common types to`src/stremio-core/types/common/` if needed.
-- [ ] Export types from`src/stremio-core/types/index.ts`.
-- [ ] Run`tsc` / fix autocomplete issues.
-
-### 3 — Actions
-
-- [ ] Add action types in`src/stremio-core/types/actions/` (e.g.,`feature-actions.ts`).
-- [ ] Add a**single** ActionBuilder method in`src/stremio-core/core/action-builder.ts`.
-  - Name:`ActionBuilder.<verb><FeatureName>(...)`.
-  - Return a**stringified** action JSON.
-- [ ] Add tests for action builder output (unit test).
-
-### 4 — StateParser
-
-- [ ] Add a`parse<FeatureName>` method in`src/stremio-core/core/state-parser.ts`.
-  - Validate / coerce raw WASM values into typed values.
-  - Use defensive checks (optional chaining, defaults).
-- [ ] If parsing is complex, add Zod schemas in`src/stremio-core/core/schemas/`.
-- [ ] Unit test the parser with representative raw state samples.
-
-### 5 — Hooks (TanStack Query)
-
-- [ ] Create`use<FeatureName>State()` query hook in`src/stremio-core/hooks/`.
-  - Use`core.get_state("MODEL_NAME")` and call the parser.
-  - Set`staleTime` /`refetchInterval` appropriately.
-- [ ] Create`use<FeatureName>Actions()` dispatch hook that calls ActionBuilder.
-  - After dispatch, call`queryClient.invalidateQueries({ queryKey: ['stremio-core', 'MODEL_NAME'] })`.
-- [ ] Add optimistic-update behavior when appropriate.
-
-### 6 — Components / UI
-
-- [ ] Wire`use<FeatureName>State()` into the component/page.
-- [ ] Wire`use<FeatureName>Actions()` to UI actions (buttons, forms).
-- [ ] Add loading & error states; avoid calling`get_state()` on every render.
-- [ ] Add minimal styling and accessibility labels.
-
-### 7 — Tests
-
-- [ ] Unit tests for action builder and parser.
-- [ ] Integration tests (if available) verifying dispatch → state change.
-- [ ] Manual QA checklist: run`npm run dev`, navigate to the page, exercise happy & edge flows.
-
-### 8 — Debugging & observability
-
-- [ ] Add temporary dev logging to expose state:`window.__STREMIO_CORE__ = core` in dev.
-- [ ] Add console examples to the template for inspecting raw state.
-- [ ] Add any core telemetry/metrics if appropriate.
-
-### 9 — Performance & polish
-
-- [ ] Check for unnecessary re-renders; memoize expensive derived state.
-- [ ] Use TanStack query selective invalidation (`['stremio-core','ctx','library']`).
-- [ ] Add debounce for input-heavy features.
-
-### 10 — Documentation & PR
-
-- [ ] Add/update this template with any feature-specific notes.
-- [ ] Add JSDoc to exported methods and hooks.
-- [ ] Update the README in`src/stremio-core/` if new concepts were introduced.
-- [ ] Create PR with description, screenshots, testing notes, and migration steps.
-
----
-
-## Example placeholders (copy these for new features)
-
-```
-- Feature name: INPUT_FEATURE_NAME_HERE
-- Model name (core.get_state): "MODEL_NAME_HERE"
-- Action name (ActionBuilder): ActionBuilder.doThingForFeature
-- Types to add:
-  - src/stremio-core/types/models/feature.ts
-  - src/stremio-core/types/actions/feature-actions.ts
-- Hooks to add:
-  - useFeatureState
-  - useFeatureActions
+export interface CalendarState {
+  events: CalendarEvent[];
+  isLoading: boolean;
+}
 ```
 
----
+**2. Export the Model**
+File: `src/types/models/index.ts`
 
-## Helpful commands
-
-```bash
-# search core for action names
-git clone https://github.com/Stremio/stremio-core.git
-cd stremio-core
-grep -R "AddToLibrary\|ActionCtx\|Load(" -n src || true
-
-# run dev
-npm run dev
+```typescript
+export * from "./calendar";
 ```
 
----
+**3. Define the Action Interface**
+File: `src/types/actions/<feature-actions>.ts` (or add to existing domain file)
 
-## Quick copy checklist (for PR description)
+```typescript
+// Example: src/types/actions/load/index.ts (Adding to Load actions)
 
-- Descritpion: I wokred of feature x, to do thing y.
+export type ActionLoad =
+    | ...
+    | {
+        Calendar: {
+            filters: any[];
+            year: number;
+            month: number;
+        };
+      };
+```
 
-- [ ] Types added & exported
-  - reference snippit
+### Phase 3: Core Logic (`src/core`)
 
-  ```ts
-  export interface X {
-    // ...
-  }
-  ```
+**1. Update the ActionBuilder**
+File: `src/core/action-builder.ts`
 
-  - what it:
-  - what it does :
+Add a static method to construct the action JSON. Use the helper functions (`buildLoadAction`, `buildActionWithArgs`, etc.) to ensure formatting consistency.
 
-- [ ] ActionBuilder method added
-  - reference snippit
+```typescript
+export class ActionBuilder {
+  // ... existing domains
 
-  ```ts
-  export class ActionBuilder {
-      static ActionX(arg: string): string {
-        return JSON.stringify({
-            Ctx: { CtxAction: id }
-        });
+  static Calendar = {
+    load: (year: number, month: number): string => {
+      return buildLoadAction("Calendar", {
+        filters: [],
+        year,
+        month
+      });
     }
-    ...
-  }
-  ```
+  };
+}
+```
 
-- [ ] State parser added or unit tested
-- [ ] Query + dispatch hooks added
-- [ ] Components wired & basic E2E manual checks pass
-- [ ] README / docs updated
+**2. Update the StateParser**
+File: `src/core/state-parser.ts`
+
+Create a static method to transform the raw (unsafe) JSON into your typed Model. **Always write defensive code.**
+
+```typescript
+import type { CalendarState } from "../types/models/calendar";
+
+export class StateParser {
+  // ... existing parsers
+
+  static parseCalendar(raw: any): CalendarState {
+    if (!raw || !Array.isArray(raw.events)) {
+      return { events: [], isLoading: true }; // Default safe state
+    }
+
+    return {
+      isLoading: false,
+      events: raw.events.map((evt: any) => ({
+        date: evt.date,
+        items: Array.isArray(evt.items) ? evt.items : [] // Reuse parseMetaItem if complex
+      }))
+    };
+  }
+}
+```
+
+### Phase 4: Hooks & State Management (`src/hooks`)
+
+**1. Define Query Keys**
+File: `src/queries/keys.ts`
+
+Add a consistent key for caching.
+
+```typescript
+export const coreKeys = {
+  // ...
+  calendar: (year: number, month: number) =>
+    [...coreKeys.all, "model", "calendar", year, month] as const
+};
+```
+
+**2. Create the Hook**
+File: `src/hooks/use-calendar.ts`
+
+Use `useCoreQuery` to handle the heavy lifting (transport communication, caching, parsing).
+
+```typescript
+import { useCoreQuery } from "./use-core-model";
+import { StateParser } from "../core/state-parser";
+import { ActionBuilder } from "../core/action-builder";
+import { useDispatch } from "./use-dispatch";
+
+export function useCalendar(year: number, month: number) {
+  // 1. Setup Query
+  // Note: 'calendar' is the string ID used in transport.getState('calendar')
+  const { data, isLoading, error } = useCoreQuery(
+    "calendar",
+    StateParser.parseCalendar
+  );
+
+  const dispatch = useDispatch();
+
+  // 2. Setup Load Action
+  const loadCalendar = async () => {
+    await dispatch(ActionBuilder.Calendar.load(year, month), "calendar");
+  };
+
+  // 3. Return API
+  return {
+    events: data?.events || [],
+    isLoading,
+    error,
+    loadCalendar
+  };
+}
+```
+
+### Phase 5: UI Integration
+
+Wire it up in your React component.
+
+```tsx
+// src/app/calendar/page.tsx
+import { useEffect } from "react";
+import { useCalendar } from "@/stremio-core-ts-wrapper";
+
+export default function CalendarPage() {
+  const { events, loadCalendar } = useCalendar(2023, 11);
+
+  useEffect(() => {
+    loadCalendar();
+  }, []);
+
+  return (
+    <div>
+      {events.map((evt) => (
+        <div key={evt.date}>
+          {evt.date}: {evt.items.length} items
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+---
+
+## ✅ Pull Request Checklist
+
+Copy this checklist into your PR description when submitting a new feature.
+
+### Feature Metadata
+
+- **Feature Name**: `[e.g., Calendar]`
+- **Model Name (Core)**: `[e.g., "calendar"]`
+- **Action Type**: `[e.g., Load -> Calendar]`
+
+### Implementation Status
+
+- [ ] **Types**: Interfaces added to `src/types/models/`.
+- [ ] **ActionBuilder**: JSON construction logic added and verified against Rust source.
+- [ ] **StateParser**: Parser implemented with null-checks/defaults.
+- [ ] **Hook**: Custom hook created using `useCoreQuery`.
+- [ ] **Cache Invalidation**: Confirmed `NewState` event triggers re-fetch (via `useCoreQuery` internal logic).
+- [ ] **Manual Test**: Verified using `StremioCoreWebDebugCenter` that the action dispatches and state returns correctly.
+
+### Documentation
+
+- [ ] **Checklist**: Updated `docs/implementation-checklist.md`.
+- [ ] **Architecture**: If this introduces a new pattern, update `docs/StremioCoreTypeScriptWrapperArchitecture.md`.
+
+---
+
+## 🐛 Troubleshooting Common Issues
+
+**1. The state remains `undefined` or empty.**
+
+- Check `src/core/core-transport.ts`. Is the `dispatch` actually sending?
+- Did you call the `loadX()` function? Core models often need an initial `Load` action before they populate data.
+- Check the **Debug Center Events** tab. Did a `NewState` event fire?
+
+**2. The Parser crashes.**
+
+- The raw state is likely different from what you expected. Use the **State Inspector** in the Debug Center to copy the _actual_ JSON and compare it to your interface.
+- Add `console.log(raw)` inside your `StateParser` static method to debug.
+
+**3. Infinite Re-renders.**
+
+- Ensure your `StateParser` returns stable objects if data hasn't changed, or rely on TanStack Query's `structuralSharing` (enabled by default).
+- Check if your `useEffect` dependency array in the component is correct.
