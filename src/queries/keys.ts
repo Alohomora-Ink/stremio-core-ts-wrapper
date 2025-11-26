@@ -8,6 +8,14 @@ export const coreKeys = {
     ctx: () => coreKeys.model("ctx"),
     board: () => coreKeys.model("board"),
     library: () => coreKeys.model("library"),
-    discover: (resource: string, type: string, id: string) =>
-        [...coreKeys.all, "discover", resource, type, id] as const,
-};
+    addon: {
+        all: () => [...coreKeys.all, "addon"] as const,
+        manifest: (transportUrl: string) => [...coreKeys.addon.all(), "manifest", transportUrl] as const,
+        catalog: (transportUrl: string, type: string, id: string, extra: string) =>
+            [...coreKeys.addon.all(), "catalog", transportUrl, type, id, extra] as const,
+        meta: (transportUrl: string, type: string, id: string) =>
+            [...coreKeys.addon.all(), "meta", transportUrl, type, id] as const,
+        stream: (transportUrl: string, type: string, id: string) =>
+            [...coreKeys.addon.all(), "stream", transportUrl, type, id] as const,
+    }
+};      

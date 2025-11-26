@@ -39,5 +39,12 @@ export interface Stream {
         notWebReady?: boolean;
         bingeGroup?: string;
         countryWhitelist?: string[];
+        filename?: string
     };
+
+    /** Source addon ID (added by aggregator) */
+    _sourceAddon: string;
+
+    /** Source addon name (added by aggregator) */
+    _sourceName: string;
 }

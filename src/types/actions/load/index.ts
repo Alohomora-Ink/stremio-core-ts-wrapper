@@ -21,7 +21,7 @@ export type ActionLoad =
     }
     | {
         Calendar: {
-            filters: any[]; // TODO: Define strict calendar filters if needed
+            filters: any[];
             year: number;
             month: number;
         };

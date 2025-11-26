@@ -6,20 +6,73 @@ export interface MetaLink {
 
 export interface MetaTrailer {
     source: string;
-    type: string; // "Trailer", "Teaser", etc.
+    type: string;
 }
 
 export interface MetaBehaviorHints {
     defaultVideoId?: string;
     hasScheduledVideos?: boolean;
+    adult?: boolean;
+    p2p?: boolean;
+    configurable?: boolean;
+    configurationRequired?: boolean;
+}
+
+export interface MetaVideoVariant {
+    addonId: string;     // e.g. "org.stremio.cinemeta"
+    rawVideo: MetaVideo;
+}
+
+export interface MetaVideo {
+    id: string;
+    name: string;
+    released?: string;
+    thumbnail?: string;
+
+    // Series Specific
+    season?: number;
+    episode?: number;
+    number?: number;
+    watched?: boolean;
+
+    // Details
+    overview?: string;
+    description?: string;
+    rating?: string;
+    runtime?: string;
+
+    // IDs & Mapping (Crucial for Kitsu -> Cinemeta mapping)
+    imdb_id?: string;
+    imdbSeason?: number;
+    imdbEpisode?: number;
+
+    // Stream info
+    streams?: any[];
+    upcoming?: boolean;
+
+    // --- THE BACKPACK ---
+    _variants?: MetaVideoVariant[];
+}
+
+export interface MetaCastMember {
+    name: string;
+    character?: string;
+    photo?: string | null;
+    url?: string;
 }
 
 export interface MetaItem {
     // -- IDENTITY --
+    _id: string;
     id: string;
-    type: string;
+    type: string; // "movie", "series", "anime", "channel", "tv"
     name: string;
     slug?: string;
+
+    // -- EXTERNAL IDS --
+    imdb_id?: string;
+    moviedb_id?: number;
+    kitsu_id?: string;
 
     // -- VISUALS --
     poster?: string;
@@ -29,36 +82,45 @@ export interface MetaItem {
 
     // -- DETAILS --
     description?: string;
-    releaseInfo?: string; // "2023", "1999-2024"
-    year?: string;        // Some addons use year instead of releaseInfo
-    runtime?: string;     // "150 min"
-    released?: string;    // ISO Date "2025-11-07..."
+    releaseInfo?: string;
+    year?: string;
+    runtime?: string;
+    released?: string;
+    status?: string;
+    website?: string;
+    language?: string;
 
-    // -- RATINGS --
+    // -- RATINGS & METRICS --
     imdbRating?: string;
-    awards?: string;      // "1 win & 2 nominations"
+    userCount?: number;
+    awards?: string;
+    popularity?: number;
 
     // -- CLASSIFICATION --
     genres?: string[];
+    genre?: string[];
     country?: string;
+    ageRating?: string;
 
-    // -- CREATIVE TEAM (Simple Arrays) --
+    // -- CREATIVE TEAM --
     director?: string[];
-    cast?: string[];
     writer?: string[];
+    cast?: string[];
 
     // -- RICH DATA --
-    links?: MetaLink[];       // The generic Stremio link structure (Cast, Directors, Genres)
-    trailers?: MetaTrailer[]; // YouTube sources
+    links?: MetaLink[];
+    trailers?: MetaTrailer[];
+    trailerStreams?: Array<{ title: string; ytId: string }>;
     behaviorHints?: MetaBehaviorHints;
+    videos?: MetaVideo[];
 
     // -- ADDON SPECIFIC EXTRAS --
-    // TMDB/RPDB sometimes return specific extras
     app_extras?: {
-        cast?: Array<{
-            name: string;
-            character?: string;
-            photo?: string | null;
-        }>;
+        cast?: MetaCastMember[];
+        ratings?: Record<string, number>;
     };
+
+    // -- INTERNAL / AGGREGATION FLAGS --
+    _sourceAddon?: string;
+    _aggregatedIds?: string[]; // List of all IDs merged into this item
 }

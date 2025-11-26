@@ -2,25 +2,22 @@
 
 import React, {
   createContext,
+  startTransition,
+  useCallback,
   useEffect,
-  useState,
   useRef,
-  useCallback
+  useState
 } from "react";
-import { CoreTransport } from "../core/core-transport";
-import { ActionBuilder } from "../core/action-builder";
+
+import { useQueryClient } from "@tanstack/react-query";
+
 import {
   AuthTransition,
   AuthTransitionType
 } from "../../../components/transitions/AuthTransition";
-
-interface StremioCoreContextType {
-  transport: CoreTransport | null;
-  isTransportReady: boolean;
-  isAppSyncing: boolean;
-  error: Error | null;
-  triggerAuthReload: (type: AuthTransitionType) => void;
-}
+import { ActionBuilder } from "../core/action-builder";
+import { CoreTransport } from "../core/core-transport";
+import { coreKeys } from "../queries/keys";
 
 interface StremioCoreContextType {
   transport: CoreTransport | null;
@@ -38,6 +35,10 @@ export const StremioCoreContext = createContext<StremioCoreContextType>({
   triggerAuthReload: () => {}
 });
 
+export function useStremioCore() {
+  return React.useContext(StremioCoreContext);
+}
+
 export function StremioCoreProvider({
   children
 }: {
@@ -46,10 +47,10 @@ export function StremioCoreProvider({
   const [transport, setTransport] = useState<CoreTransport | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const [isAppSyncing, setIsAppSyncing] = useState(true);
-
   const [authTransition, setAuthTransition] =
     useState<AuthTransitionType>(null);
 
+  const queryClient = useQueryClient();
   const hasBootstrapped = useRef(false);
   const isEnforcing = useRef(false);
 
@@ -62,6 +63,35 @@ export function StremioCoreProvider({
       window.location.reload();
     }, 2000);
   }, []);
+
+  useEffect(() => {
+    if (!transport) return;
+
+    const libraryEvents = [
+      "LibraryItemAdded",
+      "LibraryItemRemoved",
+      "LibraryItemRewinded",
+      "LibraryItemNotificationsToggled",
+      "LibraryItemMarkedAsWatched",
+      "NotificationsDismissed"
+    ];
+
+    const handleCoreEvent = (event: any) => {
+      if (libraryEvents.includes(event?.event)) {
+        console.log(`[Core] ♻️ Global Invalidation for: ${event.event}`);
+        queryClient.invalidateQueries({ queryKey: coreKeys.ctx() });
+        queryClient.invalidateQueries({ queryKey: coreKeys.library() });
+        queryClient.invalidateQueries({
+          queryKey: coreKeys.model("meta_details")
+        });
+      }
+    };
+
+    transport.events.on("CoreEvent", handleCoreEvent);
+    return () => {
+      transport.events.off("CoreEvent", handleCoreEvent);
+    };
+  }, [transport, queryClient]);
 
   useEffect(() => {
     let mounted = true;
@@ -123,14 +153,10 @@ export function StremioCoreProvider({
 
               if (changedModels.includes("ctx")) {
                 enforceProxy();
-                if (mounted) setIsAppSyncing(false);
               }
             };
 
             const handleCoreEvent = (event: any) => {
-              if (event?.event === "Error") {
-                if (mounted) setIsAppSyncing(false);
-              }
               if (
                 event?.event === "UserAuthenticated" ||
                 event?.event === "UserPulledFromAPI"
@@ -145,22 +171,35 @@ export function StremioCoreProvider({
             await enforceProxy();
 
             try {
+              // 1. Pull User
               await transportInstance.dispatch(
                 JSON.parse(ActionBuilder.User.pullUser()),
                 "ctx"
               );
+              console.log(" 📚 [User] Pulling User...");
 
-              console.log(" 📚 [Provider] Pulling User");
+              // 2. Syncing
               await transportInstance.dispatch(
-                JSON.parse(ActionBuilder.User.syncLibrary()),
+                JSON.parse(ActionBuilder.Library.sync()),
                 "ctx"
               );
+              console.log(" 📚 [Provider] Syncing Library...");
+
+              // 3. Load Library Model
+
+              await transportInstance.dispatch(
+                JSON.parse(ActionBuilder.Load.library(null, "lastwatched", 1)),
+                "library"
+              );
+              console.log(" 📂 [Provider] Loading Library Model...");
             } catch (e) {
-              console.error("❌ [Provider] Bootstrap Dispatch Failed:", e);
+              console.error("❌ [Provider] Bootstrap Error:", e);
             } finally {
               setTimeout(() => {
                 if (mounted) {
-                  setIsAppSyncing(false);
+                  startTransition(() => {
+                    setIsAppSyncing(false);
+                  });
                   enforceProxy();
                 }
               }, 1000);

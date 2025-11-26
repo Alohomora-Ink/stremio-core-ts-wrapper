@@ -1,4 +1,4 @@
-import type { MetaItem, AddonDescriptor } from "../types/models";
+import type { MetaItem, AddonDescriptor, MetaVideo } from "../types/models";
 import type { ProfileSettings } from "../types/actions/ctx/settings";
 
 // ============================================================================
@@ -182,41 +182,61 @@ export class ActionBuilder {
         },
     };
 
-    // ==========================================================================
+    /// ==========================================================================
     //  CTX: LIBRARY MANAGEMENT
     // ==========================================================================
     static Library = {
-        /**
-         * Add a meta item to the library
-         * Pattern: Ctx -> AddToLibrary(MetaItem)
-         */
         addItem: (item: MetaItem): string => {
             return buildActionWithArgsSubActionWithArgs("Ctx", "AddToLibrary", item);
         },
-
-        /**
-         * Remove an item from the library
-         * Pattern: Ctx -> RemoveFromLibrary(ID)
-         */
         removeItem: (id: string): string => {
             return buildActionWithArgsSubActionWithArgs("Ctx", "RemoveFromLibrary", id);
         },
-
-        /**
-         * Rewind a library item
-         * Pattern: Ctx -> RewindLibraryItem(ID)
-         */
         rewind: (id: string): string => {
             return buildActionWithArgsSubActionWithArgs("Ctx", "RewindLibraryItem", id);
         },
 
         /**
-         * Toggle notifications for a library item
-         * Pattern: Ctx -> ToggleNotifications(ID)
+         * Toggle notifications for a library item.
+         * RUST: ToggleLibraryItemNotifications(LibraryItemId, bool) -> Tuple
+         * JSON: args: [id, boolean]
          */
-        toggleNotifications: (id: string): string => {
-            return buildActionWithArgsSubActionWithArgs("Ctx", "ToggleNotifications", id);
+        toggleNotifications: (id: string, enabled: boolean): string => {
+            return buildActionWithArgsSubActionWithArgs("Ctx", "ToggleLibraryItemNotifications", [id, enabled]);
         },
+
+        /**
+         * Mark the ENTIRE item as watched/unwatched.
+         * RUST: LibraryItemMarkAsWatched { id: LibraryItemId, is_watched: bool } -> Struct
+         * JSON: args: { id: "...", is_watched: true }
+         */
+        markAsWatched: (id: string, is_watched: boolean): string => {
+            return buildActionWithArgsSubActionWithArgs("Ctx", "LibraryItemMarkAsWatched", { id, is_watched });
+        },
+
+        sync: (): string => buildActionWithArgsSubActionNullArgs("Ctx", "SyncLibraryWithAPI"),
+    };
+
+    // ==========================================================================
+    //  META DETAILS / PLAYER (Specific Item Actions)
+    // ==========================================================================
+    static MetaDetails = {
+        /**
+         * Mark a specific video (episode) as watched.
+         * RUST: MarkVideoAsWatched(Video, bool) -> Tuple
+         * Requires passing the FULL video object.
+         */
+        markVideoAsWatched: (video: MetaVideo, isWatched: boolean): string => {
+            return buildActionWithArgsSubActionWithArgs("MetaDetails", "MarkVideoAsWatched", [video, isWatched]);
+        },
+
+        /**
+         * Mark a season as watched.
+         * RUST: MarkSeasonAsWatched(u32, bool) -> Tuple
+         */
+        markSeasonAsWatched: (season: number, isWatched: boolean): string => {
+            return buildActionWithArgsSubActionWithArgs("MetaDetails", "MarkSeasonAsWatched", [season, isWatched]);
+        }
     };
 
     // ==========================================================================
@@ -310,7 +330,20 @@ export class ActionBuilder {
          * Pattern: Load -> MetaDetails
          */
         metaDetails: (type: string, id: string, video_id?: string): string => {
-            return buildLoadAction("MetaDetails", { type, id, video_id });
+            return buildLoadAction("MetaDetails", {
+                metaPath: {
+                    resource: "meta",
+                    type: type,
+                    id: id,
+                    extra: []
+                },
+                videoPath: video_id ? {
+                    resource: "video",
+                    type: type,
+                    id: video_id,
+                    extra: []
+                } : null
+            });
         },
 
         /**
@@ -357,39 +390,53 @@ export class ActionBuilder {
 
         /**
          * Mark playback as ended
-         * Pattern: Player -> Ended(Args)
+         * Pattern: Player -> Ended()
          */
-        ended: (
-            time: number,
-            duration: number,
-            device: string = "web"
-        ): string => {
-            return buildActionWithArgsSubActionWithArgs("Player", "Ended", { time, duration, device });
+        ended: (): string => {
+            return buildActionWithArgsSubActionNullArgs("Player", "Ended");
         },
 
         /**
-         * Pause playback
-         * Pattern: Player -> Paused (Unit Variant)
+         * Mark video watched via Player model
+         * RUST: MarkVideoAsWatched(Video, bool)
          */
-        paused: (): string => {
-            return buildActionWithArgsSubActionNullArgs("Player", "Paused");
-        },
+        markVideoAsWatched: (video: MetaVideo, isWatched: boolean): string => {
+            return buildActionWithArgsSubActionWithArgs("Player", "MarkVideoAsWatched", [video, isWatched]);
+        }
 
-        /**
-         * Resume playback
-         * Pattern: Player -> Playing (Unit Variant)
-         */
-        playing: (): string => {
-            return buildActionWithArgsSubActionNullArgs("Player", "Playing");
-        },
 
-        /**
-         * Update stream stats
-         * Pattern: Player -> UpdateStats(Args)
-         */
-        updateStats: (hash: string, size: number): string => {
-            return buildActionWithArgsSubActionWithArgs("Player", "UpdateStats", { hash, size });
-        },
+
+        //  thse might be wrong
+        // paused: (): string => buildActionWithArgsSubActionNullArgs("Player", "Paused"),
+        // playing: (): string => buildActionWithArgsSubActionNullArgs("Player", "Playing"),
+
+        // // FIX: MarkVideoAsWatched uses a Tuple [Video, bool]
+        // markVideoAsWatched: (video: MetaVideo, isWatched: boolean): string => {
+        //     return buildActionWithArgsSubActionWithArgs("Player", "MarkVideoAsWatched", [video, isWatched]);
+        // }
+        // /**
+        //  * Pause playback
+        //  * Pattern: Player -> Paused (Unit Variant)
+        //  */
+        // paused: (): string => {
+        //     return buildActionWithArgsSubActionNullArgs("Player", "Paused");
+        // },
+
+        // /**
+        //  * Resume playback
+        //  * Pattern: Player -> Playing (Unit Variant)
+        //  */
+        // playing: (): string => {
+        //     return buildActionWithArgsSubActionNullArgs("Player", "Playing");
+        // },
+
+        // /**
+        //  * Update stream stats
+        //  * Pattern: Player -> UpdateStats(Args)
+        //  */
+        // updateStats: (hash: string, size: number): string => {
+        //     return buildActionWithArgsSubActionWithArgs("Player", "UpdateStats", { hash, size });
+        // },
     };
 
     // ==========================================================================

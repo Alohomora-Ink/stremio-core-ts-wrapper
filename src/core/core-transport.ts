@@ -45,10 +45,11 @@ export class CoreTransport {
         return this.bridge.call(["getState"], [modelField]);
     }
 
-    public async decodeStream(stream: any) {
-        if (!this.bridge) throw new Error("Bridge not initialized");
-        return this.bridge.call(["decodeStream"], [stream]);
-    }
+    // this is not doing anyting right now i tested nothign happens
+    // public async decodeStream(stream: any) {
+    //     if (!this.bridge) throw new Error("Bridge not initialized");
+    //     return this.bridge.call(["decodeStream"], [stream]);
+    // }
 
     public async analytics(event: any) {
         if (!this.bridge) throw new Error("Bridge not initialized");

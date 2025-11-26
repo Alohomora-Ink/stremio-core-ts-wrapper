@@ -22,10 +22,6 @@ export class AddonParser {
 
     static parseCatalogResponse(raw: any): MetaItem[] {
         if (!raw || !Array.isArray(raw.metas)) return [];
-        // We can reuse the robust MetaItem parsing logic if needed, 
-        // but for now we trust the basic shape matches our interfaces
-        // or map it strictly if we want to be 100% safe.
-        // TODO : Remaping
         return raw.metas;
     }
 

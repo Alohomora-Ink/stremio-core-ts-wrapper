@@ -1,0 +1,1341 @@
+import {
+  Activity,
+  Beaker,
+  CalendarArrowDown,
+  CheckCircle,
+  CheckCircle2,
+  Clock,
+  Copy,
+  Database,
+  FileBox,
+  Flame,
+  History,
+  Loader2,
+  Logs,
+  Play,
+  PlayCircle,
+  Send,
+  Terminal,
+  Trash2,
+  User,
+  X,
+  Zap
+} from "lucide-react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+
+import {
+  Listbox,
+  ListboxButton,
+  ListboxOption,
+  ListboxOptions
+} from "@headlessui/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+import { cn } from "../../../../lib/utils";
+import { CoreTransport } from "../../core/core-transport";
+import { JSONTreeCustom } from "./JsonThreeCustom";
+import { useAggregatedMeta } from "../../hooks/use-aggregated-meta";
+import {
+  StremioCoreContext,
+  StremioCoreProvider
+} from "../../providers/StremioCoreProvider";
+import { useAggregatedStreams } from "../../hooks/use-aggregated-streams";
+import { MetaItem, MetaVideo } from "../../types/models";
+
+// ============================================================================
+// TYPES & CONSTANTS
+// ============================================================================
+
+type LogLevel = "info" | "error" | "success" | "warning" | "event";
+
+interface LogEntry {
+  id: string;
+  timestamp: string;
+  message: string;
+  level: LogLevel;
+  details?: any;
+}
+
+interface ActionHistoryItem {
+  id: string;
+  timestamp: string;
+  action: string;
+  model: string;
+  status: "success" | "error";
+  error?: string;
+}
+
+interface EventHistoryItem {
+  id: string;
+  timestamp: string;
+  type: "NewState" | "CoreEvent";
+  payload: any | { event: string; args: any };
+}
+
+const VALID_MODELS = [
+  "ctx",
+  "auth_link",
+  "data_export",
+  "continue_watching_preview",
+  "board",
+  "discover",
+  "library",
+  "continue_watching",
+  "calendar",
+  "search",
+  "local_search",
+  "meta_details",
+  "remote_addons",
+  "installed_addons",
+  "addon_details",
+  "streaming_server",
+  "player"
+] as const;
+
+const COMMON_ACTIONS = [
+  {
+    label: "Sync Addons & User",
+    action: { action: "Ctx", args: { action: "PullAddonsFromAPI" } },
+    model: "ctx",
+    description: "Fetch available addons and user data"
+  },
+  {
+    label: "Load Board",
+    action: {
+      action: "Load",
+      args: {
+        model: "CatalogsWithExtra",
+        args: { extra: [] }
+      }
+    },
+    model: "board",
+    description: "Load the main catalog board"
+  },
+  {
+    label: "Load Library",
+    action: {
+      action: "Load",
+      args: {
+        model: "LibraryWithFilters",
+        args: {
+          request: {
+            type: null,
+            sort: "lastwatched",
+            page: 1
+          }
+        }
+      }
+    },
+    model: "library",
+    description: "Load user's library"
+  },
+  {
+    label: "Load Calendar",
+    action: {
+      action: "Load",
+      args: {
+        model: "Calendar",
+        args: {
+          year: new Date().getFullYear(),
+          month: new Date().getMonth() + 1,
+          filters: []
+        }
+      }
+    },
+    model: "calendar",
+    description: "Load calendar for current month"
+  },
+  {
+    label: "Load Discover (Movies)",
+    action: {
+      action: "Load",
+      args: {
+        model: "CatalogWithFilters",
+        args: {
+          request: {
+            base: "https://v3-cinemeta.strem.io/manifest.json",
+            path: {
+              resource: "catalog",
+              type: "movie",
+              id: "top",
+              extra: []
+            }
+          }
+        }
+      }
+    },
+    model: "discover",
+    description: "Load popular movies from Cinemeta"
+  },
+  {
+    label: "Load Installed Addons",
+    action: {
+      action: "Load",
+      args: {
+        model: "InstalledAddonsWithFilters",
+        args: {
+          request: { type: null }
+        }
+      }
+    },
+    model: "installed_addons",
+    description: "Get list of installed addons"
+  },
+  {
+    label: "Logout",
+    action: { action: "Ctx", args: { action: "Logout" } },
+    model: "ctx",
+    description: "Clear user session"
+  }
+];
+// ============================================================================
+// HOOK TESTERS
+// ============================================================================
+
+function AggregatedMetaTester({ args }: { args: any }) {
+  const { meta, isLoading, sources, raw } = useAggregatedMeta(
+    args.type,
+    args.id
+  ); // <--- Destructure raw
+
+  // Helper to extract just video structure for comparison
+  const simplifyVideos = (metaItem: any) => {
+    if (!metaItem?.videos) return "No Videos";
+    // Return first 3 and last 3 videos to see structure
+    const v = metaItem.videos;
+    const sample = [...v.slice(0, 2), ...v.slice(-2)];
+    return {
+      count: v.length,
+      sample: sample.map((vid: any) => ({
+        id: vid.id,
+        season: vid.season,
+        episode: vid.episode,
+        title: vid.name
+      }))
+    };
+  };
+
+  const comparison = raw
+    ? Object.entries(raw).reduce(
+        (acc, [name, data]) => {
+          acc[name] = simplifyVideos(data);
+          return acc;
+        },
+        {} as Record<string, any>
+      )
+    : {};
+
+  const displayData = {
+    STATUS: isLoading ? "LOADING..." : "READY",
+    META_NAME: meta?.name,
+    SOURCES_QUERIED: sources,
+    // This is the "Diff" we need:
+    VIDEO_STRUCTURE_COMPARISON: comparison
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div
+        className={`rounded p-2 text-xs font-bold ${isLoading ? "bg-yellow-900/30 text-yellow-500" : "bg-green-900/30 text-green-500"}`}
+      >
+        {isLoading ? "Loading..." : "Done"}
+      </div>
+      <JSONTreeCustom data={displayData} />
+    </div>
+  );
+}
+
+interface StreamListContainerProps {
+  type: string;
+  meta: MetaItem;
+  episode?: MetaVideo;
+}
+
+function StreamAggregatorTester({
+  type,
+  meta,
+  episode
+}: StreamListContainerProps) {
+  const { streams, isLoading } = useAggregatedStreams({
+    type,
+    meta,
+    episode
+  });
+
+  const displayData = {
+    STATUS: isLoading ? "LOADING..." : "READY",
+    TOTAL_STREAMS: streams.length,
+    SOURCES_QUERIED: streams,
+    STREAMS: streams // This is what we need to see JSON for
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div
+        className={`rounded p-2 text-xs font-bold ${isLoading ? "bg-yellow-900/30 text-yellow-500" : "bg-green-900/30 text-green-500"}`}
+      >
+        {isLoading
+          ? "Fetching Streams..."
+          : `Fetched ${streams.length} streams from ${sources.filter((s) => s.count > 0).length} addons.`}
+      </div>
+      <JSONTreeCustom data={displayData} />
+    </div>
+  );
+}
+
+const HOOK_REGISTRY = [
+  {
+    id: "useAggregatedMeta",
+    label: "useAggregatedMeta (Details)",
+    description: "Fetches metadata.",
+    defaultArgs: { type: "movie", id: "tt0133093" },
+    Component: AggregatedMetaTester
+  },
+  {
+    id: "useAggregatedStreams",
+    label: "useAggregatedStreams (Streams)",
+    description: "Fetches streams from all supported addons.",
+    // Default to The Matrix (Movie)
+    // For series test, user can change input to { type: "series", id: "tt0133093:1:1" }
+    defaultArgs: { type: "movie", id: "tt0133093" },
+    Component: StreamAggregatorTester
+  }
+];
+
+// ============================================================================
+// HELPER COMPONENTS
+// ============================================================================
+
+function EventRow({ item }: { item: EventHistoryItem }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const isNewState = item.type === "NewState";
+  const textColor = isNewState ? "text-blue-400" : "text-purple-400";
+  const borderColor = isNewState
+    ? "border-blue-900/30"
+    : "border-purple-900/30";
+  const bgColor = isNewState ? "bg-blue-900/10" : "bg-purple-900/10";
+  const bgAndBorderColor = bgColor + " " + borderColor;
+
+  return (
+    <div
+      className={`border-b ${bgColor} ${borderColor} ${isOpen ? bgAndBorderColor : ""}`}
+    >
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className={`group flex w-full items-center justify-between p-2 text-left transition-colors select-none hover:bg-zinc-800/50`}
+      >
+        <div className="flex items-center gap-3 overflow-hidden">
+          <div
+            className={`text-zinc-500 transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}
+          >
+            <Play className="h-2 w-2 fill-current" />
+          </div>
+          <div className="flex min-w-0 flex-col">
+            <div
+              className={`text-[11px] font-bold ${textColor} flex items-center gap-2 font-mono`}
+            >
+              {item.type}
+              <span className="truncate text-[9px] font-normal text-zinc-500">
+                {!isNewState && !isOpen && [item.payload.event]}
+              </span>
+              {!isOpen && isNewState && Array.isArray(item.payload) && (
+                <span className="truncate text-[9px] font-normal text-zinc-500">
+                  [
+                  {item.payload
+                    .map((m: any) => (typeof m === "string" ? m : m.model))
+                    .join(", ")}
+                  ]
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+        <span className="shrink-0 font-mono text-[9px] text-zinc-600 group-hover:text-zinc-500">
+          {item.timestamp}
+        </span>
+      </button>
+      {isOpen && (
+        <div className="border-t border-zinc-800/50 bg-[#050505] p-2 pl-6 shadow-inner">
+          <pre
+            className={`overflow-x-auto font-mono text-[10px] ${isNewState ? "text-blue-300/80" : "text-purple-300/80"}`}
+          >
+            {JSON.stringify(item.payload, null, 2)}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// MAIN COMPONENT
+// ============================================================================
+
+export default function StremioCoreWebDebugCenter() {
+  // --- Query Client ---
+  const [queryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: { retry: false, refetchOnWindowFocus: false }
+        }
+      })
+  );
+
+  // --- Core State ---
+  const [transport, setTransport] = useState<CoreTransport | null>(null);
+  const [isInitializing, setIsInitializing] = useState(false);
+
+  // --- UI State ---
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string>("ctx");
+  const [rawState, setRawState] = useState<any>(null);
+  const [actionHistory, setActionHistory] = useState<ActionHistoryItem[]>([]);
+  const [eventHistory, setEventHistory] = useState<EventHistoryItem[]>([]);
+
+  // --- Hooks Tester State ---
+  const [selectedHookId, setSelectedHookId] = useState<string | null>(null);
+  const [hookInputJson, setHookInputJson] = useState("");
+  const [activeTest, setActiveTest] = useState<{
+    id: string;
+    args: any;
+  } | null>(null);
+  const [inspectorMode, setInspectorMode] = useState<"state" | "hook">("state");
+
+  // --- Advanced Feature State ---
+  const [reactiveMode, setReactiveMode] = useState(true);
+  const [heartbeatActive, setHeartbeatActive] = useState(false);
+  const [magnetLink, setMagnetLink] = useState("");
+  const [decodedStream, setDecodedStream] = useState<any>(null);
+
+  // Auth Form
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+
+  // Custom Action
+  const [customActionJson, setCustomActionJson] = useState<string>(
+    JSON.stringify(
+      { action: "Ctx", args: { action: "PullAddonsFromAPI" } },
+      null,
+      2
+    )
+  );
+  const [customTargetModel, setCustomTargetModel] = useState("ctx");
+
+  // Refs
+  const heartbeatInterval = useRef<NodeJS.Timeout | null>(null);
+  const [copiedFullState, setCopiedFullState] = useState(false);
+
+  // ============================================================================
+  // LOGGING UTILITIES
+  // ============================================================================
+
+  const addLog = useCallback(
+    (message: string, level: LogLevel = "info", details?: any) => {
+      const timestamp = new Date().toLocaleTimeString("en-US", {
+        hour12: false,
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+      });
+      setLogs((prev) => [
+        { id: crypto.randomUUID(), timestamp, message, level, details },
+        ...prev.slice(0, 99)
+      ]);
+      if (level === "error") console.error(`[${level}]`, message, details);
+      else console.log(`[${level}]`, message);
+    },
+    []
+  );
+
+  // ============================================================================
+  // CORE INITIALIZATION
+  // ============================================================================
+
+  const initializeStremioCore = async () => {
+    if (isInitializing || transport) return;
+    setIsInitializing(true);
+    addLog("=== STARTING CORE WORKER ===", "info");
+    try {
+      const core = new CoreTransport({
+        appVersion: "5.0.0-beta.26.40",
+        shellVersion: "5.0.20"
+      });
+      await core.init();
+      setTransport(core);
+      addLog("✓ Core Worker Ready", "success");
+      const ctx = await core.getState("ctx");
+      setRawState(ctx);
+      addLog("Fetched initial Ctx state", "success");
+    } catch (error: any) {
+      addLog("=== ✗ INITIALIZATION FAILED ===", "error", error?.message);
+    } finally {
+      setIsInitializing(false);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (transport) {
+        transport.destroy();
+      }
+      if (heartbeatInterval.current) clearInterval(heartbeatInterval.current);
+    };
+  }, [transport]);
+
+  // ============================================================================
+  // REACTIVE EVENT LISTENER
+  // ============================================================================
+
+  useEffect(() => {
+    if (!transport) return;
+
+    const handleNewState = (args: any) => {
+      setEventHistory((prev) => [
+        {
+          id: crypto.randomUUID(),
+          timestamp: new Date().toLocaleTimeString(),
+          type: "NewState",
+          payload: args
+        },
+        ...prev.slice(0, 99)
+      ]);
+
+      if (!reactiveMode) return;
+
+      let changedModels: string[] = [];
+      if (Array.isArray(args)) {
+        changedModels = args.map((m) => (typeof m === "string" ? m : m.model));
+      } else if (args?.model) {
+        changedModels = [args.model];
+      }
+
+      if (
+        changedModels.includes(selectedModel) ||
+        changedModels.includes("ctx")
+      ) {
+        setTimeout(() => {
+          transport
+            .getState(selectedModel)
+            .then(setRawState)
+            .catch(console.error);
+        }, 50);
+      }
+    };
+
+    const handleCoreEvent = (args: any) => {
+      setEventHistory((prev) => [
+        {
+          id: crypto.randomUUID(),
+          timestamp: new Date().toLocaleTimeString(),
+          type: "CoreEvent",
+          payload: args
+        },
+        ...prev.slice(0, 49)
+      ]);
+      if (
+        args?.event === "UserAuthenticated" ||
+        args?.event === "UserPulledFromAPI"
+      ) {
+        addLog(`Event: ${args.event}`, "success", args);
+      }
+    };
+
+    transport.events.on("NewState", handleNewState);
+    transport.events.on("CoreEvent", handleCoreEvent);
+
+    return () => {
+      transport.events.off("NewState", handleNewState);
+      transport.events.off("CoreEvent", handleCoreEvent);
+    };
+  }, [transport, selectedModel, reactiveMode, addLog]);
+
+  // ============================================================================
+  // CORE OPERATIONS
+  // ============================================================================
+
+  const getState = useCallback(
+    async (model?: string) => {
+      const targetModel = model || selectedModel;
+      if (!transport) return;
+      try {
+        const state = await transport.getState(targetModel);
+        setRawState(state);
+        if (model) addLog(`✓ State: ${targetModel}`, "success");
+        return state;
+      } catch (error: any) {
+        addLog(`✗ Get State Failed: ${targetModel}`, "error", error.message);
+      }
+    },
+    [transport, selectedModel, addLog]
+  );
+
+  const dispatchAction = useCallback(
+    async (action: any, model: string) => {
+      if (!transport) return;
+      setSelectedModel(model);
+      setInspectorMode("state");
+      addLog(`📤 Dispatching to ${model}...`, "info", action);
+      try {
+        await transport.dispatch(action, model);
+        setActionHistory((prev) => [
+          {
+            id: crypto.randomUUID(),
+            timestamp: new Date().toLocaleTimeString(),
+            action: action.action,
+            model,
+            status: "success"
+          },
+          ...prev.slice(0, 49)
+        ]);
+        setTimeout(() => getState(model), 100);
+      } catch (error: any) {
+        addLog(`✗ Dispatch Failed`, "error", error.message);
+        setActionHistory((prev) => [
+          {
+            id: crypto.randomUUID(),
+            timestamp: new Date().toLocaleTimeString(),
+            action: action.action,
+            model,
+            status: "error",
+            error: error.message
+          },
+          ...prev.slice(0, 49)
+        ]);
+      }
+    },
+    [transport, getState, addLog]
+  );
+
+  const handleCustomDispatch = () => {
+    try {
+      const action = JSON.parse(customActionJson);
+      dispatchAction(action, customTargetModel);
+    } catch (e) {
+      addLog("Invalid JSON in custom action", "error");
+    }
+  };
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!authEmail || !authPassword) {
+      addLog("Email and Password required", "warning");
+      return;
+    }
+    const action = {
+      action: "Ctx",
+      args: {
+        action: "Authenticate",
+        args: { type: "Login", email: authEmail, password: authPassword }
+      }
+    };
+    await dispatchAction(action, "ctx");
+  };
+
+  // this is not doing anyting right now i tested nothign happens
+  // const handleDecode = async () => {
+  //   if (!transport || !magnetLink) return;
+  //   addLog("Decoding stream...", "info");
+  //   try {
+  //     const result = await transport.decodeStream(magnetLink);
+  //     setDecodedStream(result);
+  //     addLog("✓ Stream Decoded", "success");
+  //   } catch (e: any) {
+  //     addLog("✗ Decode Failed", "error", e.message);
+  //   }
+  // };
+
+  const toggleHeartbeat = () => {
+    if (heartbeatActive) {
+      setHeartbeatActive(false);
+      if (heartbeatInterval.current) clearInterval(heartbeatInterval.current);
+      addLog("Stopped Heartbeat", "info");
+    } else {
+      setHeartbeatActive(true);
+      let time = 0;
+      const duration = 120000;
+      addLog("Starting Heartbeat...", "info");
+      heartbeatInterval.current = setInterval(() => {
+        if (!transport) return;
+        time += 1000;
+        const action = {
+          action: "Player",
+          args: {
+            action: "TimeChanged",
+            args: { time, duration, device: "web" }
+          }
+        };
+        transport.dispatch(action, "player").catch(console.error);
+      }, 1000);
+    }
+  };
+
+  // ============================================================================
+  // RENDER
+  // ============================================================================
+
+  // We wrap the entire UI in the necessary providers to enable Hooks
+  return (
+    <QueryClientProvider client={queryClient}>
+      <StremioCoreProvider>
+        <div className="min-h-screen bg-zinc-950 font-sans text-zinc-200 selection:bg-purple-500/30">
+          {/* TOP BAR */}
+          <div className="sticky top-0 z-10 flex items-center justify-between border-b border-zinc-800 bg-zinc-900/50 px-6 py-3 backdrop-blur">
+            <div className="flex items-center gap-3">
+              <Activity className="h-5 w-5 text-purple-400" />
+              <h1 className="text-lg font-bold tracking-tight text-white">
+                Stremio Core Debugger
+              </h1>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900 px-3 py-1 text-xs">
+                <div
+                  className={`h-2 w-2 rounded-full ${transport ? "animate-pulse bg-green-500" : "bg-red-500"}`}
+                />
+                <span className="font-mono font-medium text-zinc-400">
+                  {transport ? "WORKER ACTIVE" : "OFFLINE"}
+                </span>
+              </div>
+              <button
+                onClick={initializeStremioCore}
+                disabled={isInitializing || !!transport}
+                className={`flex items-center gap-2 rounded-md px-4 py-1.5 text-sm font-medium transition-all ${
+                  transport
+                    ? "cursor-default border border-green-900 bg-green-900/20 text-green-400"
+                    : "bg-purple-600 text-white shadow-lg shadow-purple-900/20 hover:bg-purple-500"
+                } `}
+              >
+                {isInitializing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : transport ? (
+                  <CheckCircle className="h-4 w-4" />
+                ) : (
+                  <Play className="h-4 w-4" />
+                )}
+                {transport ? "Initialized" : "Start Core"}
+              </button>
+            </div>
+          </div>
+
+          <div className="mx-auto grid h-[calc(100vh-80px)] max-w-[1600px] grid-cols-1 gap-6 p-6 lg:grid-cols-12">
+            {/* LEFT: CONTROLS (3 Cols) */}
+            <div className="custom-scrollbar col-span-3 flex h-full flex-col gap-4 overflow-y-auto pr-2">
+              {/* Quick Actions */}
+              <div className="flex shrink-0 flex-col overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900">
+                <div className="flex items-center gap-2 border-b border-zinc-800 bg-zinc-800/30 px-4 py-3">
+                  <Zap className="h-4 w-4 text-yellow-500" />
+                  <h2 className="text-xs font-bold tracking-wider text-zinc-300 uppercase">
+                    Quick Actions
+                  </h2>
+                </div>
+                <div className="space-y-1 p-2">
+                  {COMMON_ACTIONS.map((item, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => dispatchAction(item.action, item.model)}
+                      disabled={!transport}
+                      className="group flex w-full items-center rounded px-3 py-2 text-left transition-colors hover:bg-zinc-800 disabled:opacity-50"
+                    >
+                      <Send className="mr-3 h-4 w-4 shrink-0 text-zinc-400 group-hover:text-white" />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium text-zinc-300 group-hover:text-white">
+                          {item.label}
+                        </div>
+                        <div className="truncate font-mono text-[10px] text-zinc-500">
+                          {item.description}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Hooks Tester Section */}
+              <div className="flex shrink-0 flex-col overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900">
+                <div className="flex items-center gap-2 border-b border-zinc-800 bg-zinc-800/30 px-4 py-3">
+                  <Beaker className="h-4 w-4 text-purple-500" />
+                  <h2 className="text-xs font-bold tracking-wider text-zinc-300 uppercase">
+                    Hooks Laboratory
+                  </h2>
+                </div>
+                <div className="space-y-1 p-2">
+                  {HOOK_REGISTRY.map((hook) => {
+                    const isSelected = selectedHookId === hook.id;
+                    return (
+                      <div
+                        key={hook.id}
+                        className="flex flex-col rounded bg-zinc-800/50"
+                      >
+                        <button
+                          onClick={() => {
+                            if (isSelected) {
+                              setSelectedHookId(null);
+                            } else {
+                              setSelectedHookId(hook.id);
+                              setHookInputJson(
+                                JSON.stringify(hook.defaultArgs, null, 2)
+                              );
+                            }
+                          }}
+                          className={`flex w-full items-center justify-between px-3 py-2 text-left text-xs font-bold transition-colors ${isSelected ? "text-purple-400" : "text-zinc-400 hover:text-white"}`}
+                        >
+                          <span>{hook.label}</span>
+                          {isSelected ? (
+                            <X className="h-3 w-3" />
+                          ) : (
+                            <PlayCircle className="h-3 w-3" />
+                          )}
+                        </button>
+                        {isSelected && (
+                          <div className="border-t border-zinc-800 px-3 py-3">
+                            <p className="mb-2 text-[10px] text-zinc-500">
+                              {hook.description}
+                            </p>
+                            <div className="mb-2">
+                              <label className="mb-1 block text-[9px] font-bold text-zinc-600 uppercase">
+                                Arguments (JSON)
+                              </label>
+                              <textarea
+                                title="Copy JSON"
+                                value={hookInputJson}
+                                onChange={(e) =>
+                                  setHookInputJson(e.target.value)
+                                }
+                                className="h-20 w-full resize-none rounded border border-zinc-700 bg-black/50 p-2 font-mono text-[10px] text-zinc-300 outline-none focus:border-purple-500"
+                              />
+                            </div>
+                            <button
+                              onClick={() => {
+                                try {
+                                  const args = JSON.parse(hookInputJson);
+                                  setActiveTest({ id: hook.id, args });
+                                  setInspectorMode("hook");
+                                  setSelectedHookId(null);
+                                } catch (e) {
+                                  alert("Invalid JSON args");
+                                }
+                              }}
+                              className="flex w-full items-center justify-center gap-2 rounded bg-purple-600 py-1.5 text-[10px] font-bold text-white hover:bg-purple-500"
+                            >
+                              <Play className="h-3 w-3 fill-current" />
+                              EXECUTE
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Advanced Controls */}
+              <div className="flex flex-col gap-4 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+                <form onSubmit={handleLogin} className="space-y-2">
+                  <div className="mb-1 flex items-center gap-2 text-xs font-bold text-zinc-400 uppercase">
+                    <User className="h-3 w-3 text-yellow-500" /> Auth
+                  </div>
+                  <input
+                    type="email"
+                    placeholder="Email"
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    className="w-full rounded border border-zinc-700 bg-black/50 px-2 py-1.5 text-xs"
+                    autoComplete="email"
+                  />
+                  <input
+                    type="password"
+                    placeholder="Password"
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    className="w-full rounded border border-zinc-700 bg-black/50 px-2 py-1.5 text-xs"
+                    autoComplete="current-password"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!transport}
+                    className="w-full rounded bg-zinc-800 py-1.5 text-xs font-medium hover:bg-zinc-700"
+                  >
+                    Login
+                  </button>
+                </form>
+                {/* <div className="h-px bg-zinc-800" /> */}
+                {/* <div className="space-y-2">
+                  <div className="mb-1 flex items-center gap-2 text-xs font-bold text-zinc-400 uppercase">
+                    <Database className="h-3 w-3 text-yellow-500" /> Stream
+                    Decoder
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      placeholder="magnet:?..."
+                      value={magnetLink}
+                      onChange={(e) => setMagnetLink(e.target.value)}
+                      className="flex-1 rounded border border-zinc-700 bg-black/50 px-2 py-1.5 font-mono text-xs"
+                    />
+                    <button
+                      onClick={handleDecode}
+                      disabled={!transport}
+                      className="rounded bg-zinc-800 px-3 text-xs hover:bg-zinc-700"
+                    >
+                      <Send className="mt-0.5 mr-0.5 h-6 w-4 shrink-0 text-zinc-400" />
+                    </button>
+                  </div>
+                  {decodedStream && (
+                    <pre className="overflow-x-auto rounded bg-black/50 p-2 text-[9px] text-zinc-400">
+                      {JSON.stringify(decodedStream, null, 2)}
+                    </pre>
+                  )}
+                </div> */}
+                <div className="h-px bg-zinc-800" />
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-bold text-zinc-400 uppercase">
+                    <Clock className="h-3 w-3 text-yellow-500" /> Player
+                    Heartbeat
+                  </div>
+                  <button
+                    onClick={toggleHeartbeat}
+                    disabled={!transport}
+                    className={`rounded px-2 py-1 text-[10px] font-bold uppercase ${heartbeatActive ? "animate-pulse bg-red-900/50 text-red-400" : "bg-zinc-800 text-zinc-400"}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      {heartbeatActive ? (
+                        <>
+                          <Flame className="h-3 w-3 shrink-0 text-red-400" />
+                          <span>Active</span>
+                        </>
+                      ) : (
+                        <>
+                          <X className="h-3 w-3 shrink-0 text-zinc-400" />
+                          <span>Inactive</span>
+                        </>
+                      )}
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Custom Dispatch*/}
+              <div className="flex flex-1 flex-col overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900">
+                <div className="flex items-center justify-between border-b border-zinc-800 bg-zinc-800/30 px-4 py-2">
+                  <div className="flex items-center gap-2">
+                    <Terminal className="h-3 w-3 text-yellow-500" />
+                    <h2 className="text-xs font-bold tracking-wider text-zinc-300 uppercase">
+                      Custom Dispatch Command
+                    </h2>
+                  </div>
+                </div>
+                <div className="flex flex-1 flex-col gap-2 p-3">
+                  <select
+                    title="Target Model"
+                    value={customTargetModel}
+                    onChange={(e) => setCustomTargetModel(e.target.value)}
+                    className="w-full rounded border border-zinc-700 bg-black/50 px-2 py-1 text-xs"
+                  >
+                    {VALID_MODELS.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                  <textarea
+                    title="Custom Action in Json Format"
+                    value={customActionJson}
+                    onChange={(e) => setCustomActionJson(e.target.value)}
+                    className="w-full flex-1 resize-none rounded border border-zinc-700 bg-black/50 p-2 font-mono text-[10px] outline-none focus:ring-1 focus:ring-purple-500"
+                  />
+                  <button
+                    onClick={() => {
+                      handleCustomDispatch();
+                      setInspectorMode("state"); // Switch view on custom dispatch too
+                    }}
+                    disabled={!transport}
+                    className="w-full rounded bg-purple-700 py-1.5 text-xs font-bold text-white hover:bg-purple-600"
+                  >
+                    <div className="flex items-center justify-center gap-2">
+                      <Send className="mr-2 h-4 w-4 shrink-0 text-zinc-400" />
+                      <span className="tracking-wide uppercase">DISPATCH</span>
+                    </div>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* MIDDLE: STATE INSPECTOR (5 Cols) */}
+            <div className="col-span-5 flex h-full min-h-0 flex-col gap-4">
+              {/* State Viewer  */}
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900 shadow-2xl">
+                {/* === HEADER SECTION === */}
+                <div className="flex shrink-0 flex-col border-b border-zinc-800 bg-zinc-800/30">
+                  {/* ROW 1: MODE SELECTOR (State vs Hooks) */}
+                  <div className="border-b border-zinc-800/50 px-4 py-2">
+                    <Listbox value={inspectorMode} onChange={setInspectorMode}>
+                      <div className="relative w-48">
+                        <ListboxButton className="flex w-full items-center gap-2 rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-bold text-white ring-1 ring-zinc-700 transition-all hover:bg-zinc-700 focus:outline-none">
+                          {inspectorMode === "state" ? (
+                            <FileBox className="h-3.5 w-3.5 text-yellow-500" />
+                          ) : (
+                            <Beaker className="h-3.5 w-3.5 text-purple-500" />
+                          )}
+                          <span className="flex-1 text-left tracking-wider uppercase">
+                            {inspectorMode === "state"
+                              ? "Core State"
+                              : "Hook Results"}
+                          </span>
+                        </ListboxButton>
+
+                        <ListboxOptions className="absolute top-full left-0 z-50 mt-1 w-full overflow-hidden rounded-lg border border-zinc-700 bg-zinc-800 py-1 shadow-xl focus:outline-none">
+                          <ListboxOption
+                            value="state"
+                            className={({ active }) =>
+                              `flex cursor-pointer items-center gap-2 px-3 py-2 text-xs ${active ? "bg-zinc-700 text-white" : "text-zinc-400"}`
+                            }
+                          >
+                            <FileBox className="h-3.5 w-3.5 text-yellow-500" />
+                            <span className="font-bold">CORE STATE</span>
+                          </ListboxOption>
+                          <ListboxOption
+                            value="hook"
+                            className={({ active }) =>
+                              `flex cursor-pointer items-center gap-2 px-3 py-2 text-xs ${active ? "bg-zinc-700 text-white" : "text-zinc-400"}`
+                            }
+                          >
+                            <Beaker className="h-3.5 w-3.5 text-purple-500" />
+                            <span className="font-bold">HOOK RESULTS</span>
+                          </ListboxOption>
+                        </ListboxOptions>
+                      </div>
+                    </Listbox>
+                  </div>
+
+                  {/* ROW 2: CONTROLS (Model Selector, Auto Update, Copy) */}
+                  <div className="flex items-center justify-between px-4 py-2">
+                    {/* Left: Model Selector (Disabled in Hook Mode) */}
+                    <div
+                      className={`transition-opacity duration-200 ${inspectorMode !== "state" ? "pointer-events-none opacity-30" : "opacity-100"}`}
+                    >
+                      <Listbox
+                        value={selectedModel}
+                        onChange={(value) => {
+                          setSelectedModel(value);
+                          getState(value);
+                        }}
+                        disabled={inspectorMode !== "state"}
+                      >
+                        <div className="relative w-48">
+                          <ListboxButton className="flex w-full cursor-pointer items-center justify-between rounded border border-zinc-700/50 bg-zinc-900/50 px-3 py-1.5 text-xs font-bold text-yellow-500 transition-colors hover:border-zinc-600 hover:text-yellow-400 focus:outline-none">
+                            <span className="block truncate uppercase">
+                              {selectedModel}
+                            </span>
+                          </ListboxButton>
+
+                          <ListboxOptions className="absolute top-full left-0 z-50 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-zinc-700 bg-zinc-800 py-1 shadow-xl focus:outline-none">
+                            {VALID_MODELS.map((m) => (
+                              <ListboxOption
+                                key={m}
+                                value={m}
+                                className={({ active, selected }) =>
+                                  cn(
+                                    "cursor-pointer px-3 py-2 text-xs font-bold select-none",
+                                    selected
+                                      ? "bg-zinc-900/50 text-yellow-500"
+                                      : "text-zinc-400",
+                                    active && "bg-zinc-700 text-white"
+                                  )
+                                }
+                              >
+                                {m.toUpperCase()}
+                              </ListboxOption>
+                            ))}
+                          </ListboxOptions>
+                        </div>
+                      </Listbox>
+                    </div>
+
+                    {/* Right: Auto Update (Disabled in Hook Mode) & Copy (Always Active) */}
+                    <div className="flex items-center gap-3">
+                      {/* Auto Update & Refresh Group */}
+                      <div
+                        className={`flex items-center gap-3 transition-opacity duration-200 ${inspectorMode !== "state" ? "pointer-events-none opacity-30" : "opacity-100"}`}
+                      >
+                        <label className="flex cursor-pointer items-center gap-1.5 text-xs text-zinc-400 hover:text-white">
+                          <div
+                            className={cn(
+                              "h-2 w-2 rounded-full transition-colors",
+                              reactiveMode ? "bg-blue-500" : "bg-zinc-700"
+                            )}
+                          />
+                          <input
+                            type="checkbox"
+                            className="hidden"
+                            checked={reactiveMode}
+                            onChange={(e) => setReactiveMode(e.target.checked)}
+                          />
+                          Auto
+                        </label>
+                        <button
+                          disabled={inspectorMode !== "state" || reactiveMode}
+                          onClick={() => getState(selectedModel)}
+                          className={cn(
+                            "flex items-center justify-center rounded p-1 transition-colors",
+                            reactiveMode
+                              ? "cursor-not-allowed bg-zinc-800 text-zinc-500 opacity-70"
+                              : "bg-blue-600 text-white shadow-sm hover:bg-blue-500"
+                          )}
+                        >
+                          <Activity className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+
+                      <div className="h-4 w-px bg-zinc-700" />
+
+                      {/* Global Copy Button */}
+                      <button
+                        onClick={() => {
+                          let contentToCopy = "";
+                          if (inspectorMode === "state") {
+                            contentToCopy = JSON.stringify(rawState, null, 2);
+                          } else {
+                            // In Hook mode, we copy the input args + a note.
+                            // (Copying the specific hook result isn't possible from this scope easily,
+                            // but user can copy from the JSON Tree itself)
+                            contentToCopy = JSON.stringify(
+                              {
+                                test: activeTest?.id,
+                                args: activeTest?.args,
+                                note: "To copy the result, use the copy icon inside the JSON Tree."
+                              },
+                              null,
+                              2
+                            );
+                          }
+
+                          navigator.clipboard.writeText(contentToCopy);
+                          setCopiedFullState(true);
+                          setTimeout(() => setCopiedFullState(false), 2000);
+                        }}
+                        className={cn(
+                          "flex items-center gap-1.5 rounded px-2 py-1 text-xs font-bold transition-all",
+                          copiedFullState
+                            ? "bg-green-900/30 text-green-400"
+                            : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-white"
+                        )}
+                        title={
+                          inspectorMode === "state"
+                            ? "Copy State JSON"
+                            : "Copy Test Config"
+                        }
+                      >
+                        {copiedFullState ? (
+                          <>
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            <span>COPIED</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="h-3.5 w-3.5" />
+                            <span>COPY</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* BODY */}
+                <div className="relative min-h-0 flex-1 overflow-auto bg-[#0D0D0D]">
+                  {inspectorMode === "state" ? (
+                    rawState ? (
+                      <div className="inline-block min-w-full">
+                        <JSONTreeCustom data={rawState} />
+                      </div>
+                    ) : (
+                      <div className="flex h-full flex-col items-center justify-center gap-2 text-zinc-600">
+                        <Database className="h-8 w-8 opacity-20" />
+                        <span className="text-xs">No state loaded</span>
+                      </div>
+                    )
+                  ) : activeTest ? (
+                    <div className="inline-block min-w-full p-4">
+                      <div className="mb-4 border-b border-zinc-800 pb-2">
+                        <h3 className="font-mono text-xs text-purple-400">
+                          Running: {activeTest.id}
+                        </h3>
+                      </div>
+                      {HOOK_REGISTRY.map((h) => {
+                        if (h.id === activeTest.id) {
+                          const TestComponent = h.Component;
+                          return (
+                            <TestComponent
+                              key={`${h.id}-${JSON.stringify(activeTest.args)}`}
+                              args={activeTest.args}
+                            />
+                          );
+                        }
+                        return null;
+                      })}
+                    </div>
+                  ) : (
+                    <div className="flex h-full flex-col items-center justify-center gap-2 text-zinc-600">
+                      <Beaker className="h-8 w-8 opacity-20" />
+                      <span className="text-xs">
+                        Select a hook from the left to test
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Events History (Bottom Half) */}
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900">
+                {/* ... (Rest of the bottom section remains the same) ... */}
+                <div className="flex shrink-0 items-center justify-between border-b border-zinc-800 bg-zinc-800/30 px-3 py-2">
+                  <h3 className="text-[10px] font-bold text-zinc-400 uppercase">
+                    <div className="flex items-center gap-2">
+                      <CalendarArrowDown
+                        className="h-4 w-4 shrink-0 text-yellow-500"
+                        aria-hidden
+                      />
+                      <span>Events</span>
+                    </div>
+                  </h3>
+                  <div className="flex gap-2">
+                    <span className="rounded border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 text-[9px] text-zinc-600">
+                      {eventHistory.length}
+                    </span>
+                    <button
+                      onClick={() => setEventHistory([])}
+                      className="text-zinc-500 hover:text-white"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                </div>
+                <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto bg-[#0a0a0a]">
+                  {eventHistory.length === 0 ? (
+                    <div className="flex h-full items-center justify-center text-xs text-zinc-700 italic">
+                      Waiting for events...
+                    </div>
+                  ) : (
+                    <div>
+                      {eventHistory.map((item) => (
+                        <EventRow key={item.id} item={item} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* RIGHT: TELEMETRY (4 Cols) */}
+            <div className="col-span-4 flex h-full min-h-0 flex-col gap-4">
+              {/* Logs */}
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900">
+                <div className="flex shrink-0 items-center justify-between border-b border-zinc-800 bg-zinc-800/30 px-3 py-2">
+                  <h3 className="text-xs font-bold text-zinc-400 uppercase">
+                    <div className="flex items-center gap-2">
+                      <Logs
+                        className="h-4 w-4 shrink-0 text-yellow-500"
+                        aria-hidden
+                      />
+                      <span>System Logs</span>
+                    </div>
+                  </h3>
+                  <button
+                    onClick={() => setLogs([])}
+                    className="text-zinc-500 hover:text-white"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </div>
+                <div className="min-h-0 flex-1 space-y-2 overflow-y-auto bg-[#0a0a0a] p-3 font-mono text-[10px]">
+                  {logs.length === 0 && (
+                    <div className="mt-20 text-center text-zinc-700">
+                      No logs recorded
+                    </div>
+                  )}
+                  {logs.map((l) => (
+                    <div key={l.id} className="flex gap-2 break-all">
+                      <span className="shrink-0 text-zinc-600">
+                        [{l.timestamp.split(" ")[0]}]
+                      </span>
+                      <span
+                        className={
+                          l.level === "error"
+                            ? "text-red-400"
+                            : l.level === "success"
+                              ? "text-green-400"
+                              : l.level === "event"
+                                ? "text-blue-400"
+                                : "text-zinc-300"
+                        }
+                      >
+                        {l.message}{" "}
+                        {l.details ? (
+                          <span className="mt-1 ml-2 block border-l border-zinc-800 pl-2 text-zinc-600">
+                            {JSON.stringify(l.details).slice(0, 200)}
+                          </span>
+                        ) : (
+                          ""
+                        )}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {/* Action History */}
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900">
+                <div className="flex shrink-0 items-center justify-between border-b border-zinc-800 bg-zinc-800/30 px-3 py-2">
+                  <h3 className="text-xs font-bold text-zinc-400 uppercase">
+                    <div className="flex items-center gap-2">
+                      <History
+                        className="h-4 w-4 shrink-0 text-yellow-500"
+                        aria-hidden
+                      />
+                      <span>Dispatcher History</span>
+                    </div>
+                  </h3>
+                  <button
+                    onClick={() => setActionHistory([])}
+                    className="text-zinc-500 hover:text-white"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </div>
+                <div className="min-h-0 flex-1 space-y-1 overflow-y-auto bg-[#0a0a0a] p-2">
+                  {actionHistory.map((h) => (
+                    <div
+                      key={h.id}
+                      className="rounded border border-zinc-800/50 bg-zinc-900/50 p-2"
+                    >
+                      <div className="mb-1 flex items-center justify-between">
+                        <span className="text-[10px] text-zinc-500">
+                          {h.timestamp}
+                        </span>
+                        <span
+                          className={`rounded px-1.5 text-[9px] font-bold uppercase ${h.status === "success" ? "bg-green-900/30 text-green-500" : "bg-red-900/30 text-red-500"}`}
+                        >
+                          {h.status}
+                        </span>
+                      </div>
+                      <div className="font-mono text-[10px] text-purple-300">
+                        {h.action}
+                      </div>
+                      <div className="mt-1 text-right text-[9px] text-zinc-500">
+                        {h.model}
+                      </div>
+                      {h.error && (
+                        <div className="mt-1 border-t border-red-900/30 pt-1 text-[9px] text-red-400">
+                          {h.error}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </StremioCoreProvider>
+    </QueryClientProvider>
+  );
+}

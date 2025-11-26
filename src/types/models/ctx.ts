@@ -1,4 +1,5 @@
 import type { AddonDescriptor } from "./addon";
+import type { LibraryItem } from "./library";
 
 export interface UserProfile {
     _id: string;
@@ -17,13 +18,14 @@ export interface UserProfile {
 export interface CtxState {
     profile: UserProfile | null;
     library: {
-        items: Record<string, unknown>;
+        items: Record<string, LibraryItem>;
     };
     addons: {
         catalogs: AddonDescriptor[];
         installed: AddonDescriptor[];
     };
     notifications: {
-        items: Record<string, unknown>;
+        items: Record<string, any[]>;
     };
+    watched: Record<string, boolean>;
 }

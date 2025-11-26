@@ -5,9 +5,8 @@ import type { MetaItem } from "../../types/models/meta-item";
 import type { Stream } from "../../types/models/stream";
 
 export class AddonClient {
-    /**
-     * Normalizes Stremio protocol URLs to HTTPS
-     */
+    private static DEFAULT_TIMEOUT = 8000;
+
     private static normalizeUrl(url: string): string {
         if (!url) return "";
         if (url.startsWith("stremio://")) {
@@ -20,84 +19,123 @@ export class AddonClient {
     }
 
     /**
-     * SMART FETCH: Direct -> Next.js Proxy -> Fail
+     * CORRECTED URL BUILDER
+     * Now encodes the ID segment to prevent path parsing issues with colons.
      */
-    private static async smartFetch(url: string): Promise<any> {
-        try {
-            // 1. Try Direct Fetch
-            const response = await fetch(url);
-            if (!response.ok) throw new Error(`Direct fetch failed: ${response.status}`);
-            return await response.json();
-        } catch (directError) {
-            console.warn(`[AddonClient] Direct fetch failed for ${url}, trying local proxy...`);
-
-            // 2. Try via Next.js API Proxy
-            try {
-                const proxyUrl = `/api/proxy?q=${encodeURIComponent(url)}`;
-
-                const proxyResponse = await fetch(proxyUrl);
-                if (!proxyResponse.ok) throw new Error(`Proxy fetch failed: ${proxyResponse.status}`);
-                return await proxyResponse.json();
-            } catch (proxyError) {
-                console.error(`[AddonClient] All fetch methods failed for ${url}`);
-                throw directError;
-            }
-        }
-    }
-
-    static async getManifest(addonUrl: string): Promise<AddonManifest> {
-        const baseUrl = this.normalizeUrl(addonUrl);
-        const url = baseUrl.endsWith("manifest.json")
-            ? baseUrl
-            : `${baseUrl.replace(/\/$/, "")}/manifest.json`;
-
-        const json = await this.smartFetch(url);
-        return AddonParser.parseManifest(json);
-    }
-
-    static async getCatalog(
-        addonTransportUrl: string,
+    private static buildAddonUrl(
+        transportUrl: string,
+        resource: 'meta' | 'catalog' | 'stream',
         type: string,
         id: string,
         extra?: Record<string, string>
-    ): Promise<{ metas: MetaItem[] }> {
-        const baseUrl = this.normalizeUrl(addonTransportUrl).replace("/manifest.json", "");
-        let path = `/catalog/${type}/${id}`;
+    ): string {
+        // 1. Get API Base
+        const apiBase = this.normalizeUrl(transportUrl).replace(/\/manifest.json$/, '');
 
-        if (extra && Object.keys(extra).length > 0) {
+        // 2. Encode ID (tmdb:123 -> tmdb%3A123)
+        const encodedId = encodeURIComponent(id);
+
+        // 3. Build Path
+        let resourcePath = `/${resource}/${type}/${encodedId}.json`;
+
+        // 4. Handle Extra Params
+        if (resource === 'catalog' && extra && Object.keys(extra).length > 0) {
             const params = Object.entries(extra)
                 .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
                 .join("&");
-            path += `/${params}.json`;
-        } else {
-            path += ".json";
+            resourcePath = resourcePath.replace('.json', `/${params}.json`);
         }
 
-        const url = `${baseUrl}${path}`;
-        const json = await this.smartFetch(url);
+        return `${apiBase}${resourcePath}`;
+    }
 
+    private static async smartFetch(url: string): Promise<any> {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), this.DEFAULT_TIMEOUT);
+
+        try {
+            // 1. Direct Fetch
+            const response = await fetch(url, { signal: controller.signal });
+            clearTimeout(timeoutId);
+
+            if (response.ok) {
+                return await response.json();
+            }
+            // If 404/500, don't try proxy, it's a real error.
+            // Only try proxy if network error or CORS (which throws).
+            if (response.status >= 400) {
+                console.warn(`Direct fetch error ${response.status} for ${url}`);
+                return null;
+            }
+        } catch (directError) {
+            clearTimeout(timeoutId);
+            // console.log("Direct fetch failed, trying proxy:", url);
+
+            // 2. Proxy Fetch
+            try {
+                const proxyUrl = `/api/routes?q=${encodeURIComponent(url)}`;
+                const proxyController = new AbortController();
+                const proxyTimeoutId = setTimeout(() => proxyController.abort(), this.DEFAULT_TIMEOUT);
+
+                const proxyResponse = await fetch(proxyUrl, { signal: proxyController.signal });
+                clearTimeout(proxyTimeoutId);
+
+                if (!proxyResponse.ok) return null;
+
+                const text = await proxyResponse.text();
+                try {
+                    return JSON.parse(text);
+                } catch (e) {
+                    console.error("Proxy returned non-JSON:", text.substring(0, 50));
+                    return null;
+                }
+            } catch (proxyError) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    static async getManifest(addonUrl: string): Promise<AddonManifest | null> {
+        const baseUrl = this.normalizeUrl(addonUrl);
+        const url = baseUrl.endsWith("/manifest.json") ? baseUrl : `${baseUrl.replace(/\/$/, "")}/manifest.json`;
+        const json = await this.smartFetch(url);
+        if (!json) return null;
+        try {
+            return AddonParser.parseManifest(json);
+        } catch (e) {
+            return null;
+        }
+    }
+
+    static async getCatalog(
+        addonTransportUrl: string, type: string, id: string, extra?: Record<string, string>
+    ): Promise<{ metas: MetaItem[] }> {
+        const url = this.buildAddonUrl(addonTransportUrl, 'catalog', type, id, extra);
+        const json = await this.smartFetch(url);
+        if (!json) return { metas: [] };
         return { metas: AddonParser.parseCatalogResponse(json) };
     }
 
     static async getMeta(
-        addonTransportUrl: string,
-        type: string,
-        id: string
-    ): Promise<{ meta: MetaItem }> {
-        const baseUrl = this.normalizeUrl(addonTransportUrl).replace("/manifest.json", "");
-        const url = `${baseUrl}/meta/${type}/${id}.json`;
+        addonTransportUrl: string, type: string, id: string
+    ): Promise<{ meta: MetaItem | null }> {
+        const url = this.buildAddonUrl(addonTransportUrl, 'meta', type, id);
         const json = await this.smartFetch(url);
-        return { meta: AddonParser.parseMetaResponse(json) };
+        if (!json) return { meta: null };
+        try {
+            return { meta: AddonParser.parseMetaResponse(json) };
+        } catch (e) {
+            return { meta: null };
+        }
     }
 
     static async getStreams(
-        addonTransportUrl: string,
-        type: string,
-        id: string
+        addonTransportUrl: string, type: string, id: string
     ): Promise<{ streams: Stream[] }> {
-        const baseUrl = this.normalizeUrl(addonTransportUrl).replace("/manifest.json", "");
-        const url = `${baseUrl}/stream/${type}/${id}.json`;
+        const url = this.buildAddonUrl(addonTransportUrl, 'stream', type, id);
         const json = await this.smartFetch(url);
+        if (!json) return { streams: [] };
         return { streams: AddonParser.parseStreamResponse(json) };
     }
 }

@@ -13,10 +13,13 @@ export * from './types/actions';
 // Hooks
 export * from './hooks/use-stremio-core';
 export * from './hooks/use-dispatch';
+
 // Domain Hooks
 export * from './hooks/use-ctx';
 export * from './hooks/use-library';
 export * from './hooks/use-board';
+export * from './hooks/use-aggregated-meta';
+export * from './hooks/use-aggregated-streams';
 
 // API (Legacy support)
 export * from './api/addons/addon-client';

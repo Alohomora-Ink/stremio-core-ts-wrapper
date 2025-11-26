@@ -1,7 +1,8 @@
-import { useCoreQuery } from "./use-core-model";
-import { useDispatch } from "./use-dispatch";
-import { StateParser } from "../core/state-parser";
-import { ActionBuilder } from "../core/action-builder";
+import { ActionBuilder } from '../core/action-builder';
+import { StateParser } from '../core/state-parser';
+import { useCoreQuery } from './use-core-model';
+import { useDispatch } from './use-dispatch';
+
 import type { MetaItem } from "../types/models/meta-item";
 
 export function useLibrary() {
@@ -16,8 +17,8 @@ export function useLibrary() {
         await dispatch(ActionBuilder.Library.removeItem(id), "ctx");
     };
 
-    const toggleNotifications = async (id: string) => {
-        await dispatch(ActionBuilder.Library.toggleNotifications(id), "ctx");
+    const toggleNotifications = async (id: string, state: boolean) => {
+        await dispatch(ActionBuilder.Library.toggleNotifications(id, state), "ctx");
     };
 
     const loadLibraryPage = async (type: string | null = null, sort: "lastwatched" | "name" | "timeswatched" = "lastwatched", page = 1) => {
